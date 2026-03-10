@@ -7,14 +7,14 @@ interface CacheEntry {
   createdAt: number;
 }
 
-export interface CacheOptions {
+interface CacheOptions {
   /** Time-to-live in milliseconds (default: 600_000 = 10 minutes) */
   ttlMs?: number;
   /** Maximum number of cached entries (default: 50) */
   maxEntries?: number;
 }
 
-export interface CacheStats {
+interface CacheStats {
   size: number;
   hits: number;
   misses: number;

@@ -1,6 +1,6 @@
 export type DetailLevel = 'brief' | 'standard' | 'detailed';
 
-export interface DetailConfig {
+interface DetailConfig {
   /** Maximum frames to extract (0 = skip frames entirely) */
   maxFrames: number;
   /** Maximum transcript entries to return (null = unlimited) */

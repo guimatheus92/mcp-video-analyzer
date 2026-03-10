@@ -26,7 +26,6 @@ import {
 } from '../src/processors/frame-extractor.js';
 import { optimizeFrames } from '../src/processors/image-optimizer.js';
 import { deduplicateFrames } from '../src/processors/frame-dedup.js';
-import { extractTextFromFrames } from '../src/processors/frame-ocr.js';
 import { buildAnnotatedTimeline } from '../src/processors/annotated-timeline.js';
 import { getDetailConfig } from '../src/config/detail-levels.js';
 import { createTempDir, cleanupTempDir } from '../src/utils/temp-files.js';
@@ -183,7 +182,10 @@ async function main() {
     // OCR skipped in generator — tesseract.js worker crashes on Node 24.
     // In production, OCR runs fine via the MCP tool (different process model).
     console.log(`\n🔤 OCR: skipped (${ocrSourceFrames.length} frames available for OCR in production)`);
-    const ocrResults = ocrSourceFrames.map((f) => ({ file: f.filePath, text: '(skipped in generator)' }));
+    const ocrResults = ocrSourceFrames.map((_f, i) => ({
+      file: dedupedFrames.length > 0 ? `scene_${String(i + 1).padStart(3, '0')}.jpg` : `dense_${String(i + 1).padStart(3, '0')}.jpg`,
+      text: '(skipped in generator — tesseract.js crashes on Node 24)',
+    }));
     await saveJson('ocr-results', ocrResults);
 
     // ── Annotated timeline ──
@@ -191,7 +193,7 @@ async function main() {
     // Build timeline from frames + transcript (OCR skipped, so pass empty)
     const timeline = buildAnnotatedTimeline(
       ocrSourceFrames.map((f) => ({ time: f.time })),
-      transcript,
+      transcript as { time: string; text: string }[],
       [],
     );
     await saveJson('timeline', timeline);

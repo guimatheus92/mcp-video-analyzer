@@ -1,14 +1,14 @@
 [
   {
-    "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_001.jpg",
-    "text": "(skipped in generator)"
+    "file": "scene_001.jpg",
+    "text": "(skipped in generator — tesseract.js crashes on Node 24)"
   },
   {
-    "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_002.jpg",
-    "text": "(skipped in generator)"
+    "file": "scene_002.jpg",
+    "text": "(skipped in generator — tesseract.js crashes on Node 24)"
   },
   {
-    "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_003.jpg",
-    "text": "(skipped in generator)"
+    "file": "scene_003.jpg",
+    "text": "(skipped in generator — tesseract.js crashes on Node 24)"
   }
 ]
