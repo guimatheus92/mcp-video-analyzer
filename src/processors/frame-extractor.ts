@@ -10,6 +10,11 @@ const execFile = promisify(execFileCb);
 const require = createRequire(import.meta.url);
 const ffmpegPath: string = require('ffmpeg-static') as string;
 
+/** Normalize path to forward slashes for ffmpeg image2 muxer (Windows compat) */
+function ffmpegPath_(p: string): string {
+  return p.replace(/\\/g, '/');
+}
+
 export function parseTimestamp(ts: string): number {
   const parts = ts.split(':').map(Number);
   if (parts.some((p) => isNaN(p))) {
@@ -85,7 +90,7 @@ export async function extractSceneFrames(
   const threshold = options.threshold ?? 0.1;
   const maxFrames = options.maxFrames ?? 20;
 
-  const outputPattern = join(outputDir, 'scene_%03d.jpg');
+  const outputPattern = ffmpegPath_(join(outputDir, 'scene_%03d.jpg'));
 
   try {
     const { stderr } = await execFile(
@@ -142,7 +147,7 @@ export async function extractFrameAt(
   timestamp: string,
 ): Promise<IFrameResult> {
   const seconds = parseTimestamp(timestamp);
-  const outputPath = join(outputDir, `frame_at_${seconds}.jpg`);
+  const outputPath = ffmpegPath_(join(outputDir, `frame_at_${seconds}.jpg`));
 
   try {
     await execFile(
@@ -179,7 +184,7 @@ export async function extractFrameBurst(
   const duration = toSeconds - fromSeconds;
   const fps = count / duration;
 
-  const outputPattern = join(outputDir, 'burst_%03d.jpg');
+  const outputPattern = ffmpegPath_(join(outputDir, 'burst_%03d.jpg'));
 
   try {
     await execFile(
@@ -215,6 +220,45 @@ export async function extractFrameBurst(
       mimeType: 'image/jpeg',
     };
   });
+}
+
+/**
+ * Extract frames at a fixed rate (dense sampling).
+ * Useful for "watching" the full video — captures 1 frame per second by default.
+ */
+export async function extractDenseFrames(
+  videoPath: string,
+  outputDir: string,
+  options?: { fps?: number; maxFrames?: number },
+): Promise<IFrameResult[]> {
+  const requestedFps = options?.fps ?? 1;
+  const maxFrames = options?.maxFrames ?? 60;
+
+  // Probe duration to cap frame count
+  const duration = await probeVideoDuration(videoPath);
+  const expectedFrames = Math.ceil(duration * requestedFps);
+  const effectiveFps = expectedFrames > maxFrames ? maxFrames / duration : requestedFps;
+
+  const outputPattern = ffmpegPath_(join(outputDir, 'dense_%04d.jpg'));
+
+  try {
+    await execFile(
+      ffmpegPath,
+      ['-i', videoPath, '-vf', `fps=${effectiveFps}`, '-q:v', '2', outputPattern, '-y'],
+      { timeout: 180000 },
+    );
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : String(error);
+    throw new Error(`Dense frame extraction failed: ${msg}`, { cause: error });
+  }
+
+  const files = await listFrameFiles(outputDir, 'dense_');
+
+  return files.slice(0, maxFrames).map((file, i) => ({
+    time: formatTimestamp(Math.round(i / effectiveFps)),
+    filePath: join(outputDir, file),
+    mimeType: 'image/jpeg',
+  }));
 }
 
 async function listFrameFiles(dir: string, prefix: string): Promise<string[]> {

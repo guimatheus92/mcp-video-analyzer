@@ -1,14 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { registerAdapter, clearAdapters, getAdapter } from '../src/adapters/adapter.interface.js';
 import { LoomAdapter } from '../src/adapters/loom.adapter.js';
+import { TEST_LOOM_URL } from './fixtures.js';
 
-// To run Loom E2E tests, set LOOM_TEST_URL to a public Loom share URL.
-// Example: LOOM_TEST_URL=https://www.loom.com/share/abc123 npm run test:e2e
-const TEST_LOOM_URL = process.env['LOOM_TEST_URL'] ?? '';
-
-const describeIfLoom = TEST_LOOM_URL ? describe : describe.skip;
-
-describeIfLoom('E2E: Loom video analysis', () => {
+describe('E2E: Loom video analysis', () => {
   beforeAll(() => {
     clearAdapters();
     registerAdapter(new LoomAdapter());

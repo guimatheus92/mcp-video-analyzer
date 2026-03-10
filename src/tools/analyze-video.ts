@@ -2,25 +2,46 @@ import type { FastMCP } from 'fastmcp';
 import { imageContent, UserError } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
-import { extractSceneFrames, probeVideoDuration } from '../processors/frame-extractor.js';
+import {
+  extractSceneFrames,
+  extractDenseFrames,
+  probeVideoDuration,
+  formatTimestamp,
+} from '../processors/frame-extractor.js';
 import { extractBrowserFrames, generateTimestamps } from '../processors/browser-frame-extractor.js';
 import { deduplicateFrames } from '../processors/frame-dedup.js';
 import { extractTextFromFrames } from '../processors/frame-ocr.js';
 import { buildAnnotatedTimeline } from '../processors/annotated-timeline.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
+import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcriber.js';
 import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
-import { formatTimestamp } from '../processors/frame-extractor.js';
+import { AnalysisCache, cacheKey } from '../utils/cache.js';
+import { getDetailConfig } from '../config/detail-levels.js';
+import { filterAnalysisResult } from '../utils/field-filter.js';
+import type { AnalysisField } from '../utils/field-filter.js';
 import type { IAnalysisResult } from '../types.js';
+
+const cache = new AnalysisCache();
+
+const ANALYSIS_FIELDS = [
+  'metadata',
+  'transcript',
+  'frames',
+  'comments',
+  'chapters',
+  'ocrResults',
+  'timeline',
+  'aiSummary',
+] as const;
 
 const AnalyzeOptionsSchema = z
   .object({
     maxFrames: z
       .number()
       .min(1)
-      .max(50)
-      .default(20)
+      .max(60)
       .optional()
-      .describe('Maximum number of key frames to extract (default: 20)'),
+      .describe('Maximum number of key frames to extract (default depends on detail level)'),
     threshold: z
       .number()
       .min(0)
@@ -40,6 +61,24 @@ const AnalyzeOptionsSchema = z
       .default(false)
       .optional()
       .describe('Skip frame extraction (transcript + metadata only)'),
+    detail: z
+      .enum(['brief', 'standard', 'detailed'])
+      .default('standard')
+      .optional()
+      .describe(
+        'Analysis depth: "brief" (metadata + truncated transcript, no frames), "standard" (default), "detailed" (dense sampling, more frames)',
+      ),
+    fields: z
+      .array(z.enum(ANALYSIS_FIELDS))
+      .optional()
+      .describe(
+        'Specific fields to return (default: all). E.g., ["metadata", "transcript"] returns only those fields.',
+      ),
+    forceRefresh: z
+      .boolean()
+      .default(false)
+      .optional()
+      .describe('Bypass cache and re-analyze the video'),
   })
   .optional();
 
@@ -63,7 +102,13 @@ Returns structured data about the video content:
 
 Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).
 
-Use options.skipFrames=true for transcript-only analysis (faster, no video download needed).`,
+Detail levels:
+- "brief": metadata + truncated transcript only (fast, no video download)
+- "standard": full analysis with scene-change frames (default)
+- "detailed": dense sampling (1 frame/sec), more frames, full OCR
+
+Use options.fields to request only specific data (e.g., ["metadata", "transcript"]).
+Use options.forceRefresh to bypass the cache.`,
     parameters: AnalyzeVideoSchema,
     annotations: {
       title: 'Analyze Video',
@@ -74,9 +119,42 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
     },
     execute: async (args, { reportProgress }) => {
       const { url, options } = args;
-      const skipFrames = options?.skipFrames ?? false;
-      const maxFrames = options?.maxFrames ?? 20;
+      const detail = options?.detail ?? 'standard';
+      const forceRefresh = options?.forceRefresh ?? false;
+      const fields = options?.fields as AnalysisField[] | undefined;
       const threshold = options?.threshold ?? 0.1;
+
+      // Resolve detail config
+      const config = getDetailConfig(detail);
+      const maxFrames = options?.maxFrames ?? config.maxFrames;
+      const skipFrames = options?.skipFrames ?? !config.includeFrames;
+
+      // Cache check
+      const key = cacheKey(url, { detail, maxFrames, threshold });
+      if (!forceRefresh) {
+        const cached = cache.get(key);
+        if (cached) {
+          const filtered = filterAnalysisResult(cached, fields);
+          const textData = { ...filtered, frameCount: cached.frames.length };
+          const content: (
+            | { type: 'text'; text: string }
+            | Awaited<ReturnType<typeof imageContent>>
+          )[] = [{ type: 'text' as const, text: JSON.stringify(textData, null, 2) }];
+
+          // Re-add frame images if included
+          if (!fields || fields.includes('frames')) {
+            for (const frame of cached.frames) {
+              try {
+                content.push(await imageContent({ path: frame.filePath }));
+              } catch {
+                // Frame file may have been cleaned up
+              }
+            }
+          }
+
+          return { content };
+        }
+      }
 
       let adapter;
       try {
@@ -124,10 +202,16 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
 
         await reportProgress({ progress: 40, total: 100 });
 
+        // Apply transcript limit for brief mode
+        const limitedTranscript =
+          config.transcriptMaxEntries !== null
+            ? transcript.slice(0, config.transcriptMaxEntries)
+            : transcript;
+
         // Frame extraction (if not skipped)
         const result: IAnalysisResult = {
           metadata,
-          transcript,
+          transcript: limitedTranscript,
           frames: [],
           comments,
           chapters,
@@ -137,13 +221,15 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
           warnings,
         };
 
+        let videoPath: string | null = null;
+
         if (!skipFrames) {
           tempDir = await createTempDir();
           let framesExtracted = false;
 
-          // Strategy 1: yt-dlp download + ffmpeg scene detection
+          // Strategy 1: yt-dlp download + ffmpeg frame extraction
           if (adapter.capabilities.videoDownload) {
-            const videoPath = await adapter.downloadVideo(url, tempDir);
+            videoPath = await adapter.downloadVideo(url, tempDir);
 
             if (videoPath) {
               await reportProgress({ progress: 60, total: 100 });
@@ -155,16 +241,25 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
                 metadata.durationFormatted = formatTimestamp(Math.floor(duration));
               }
 
-              // Extract scene frames
-              const rawFrames = await extractSceneFrames(videoPath, tempDir, {
-                threshold,
-                maxFrames,
-              }).catch((e: unknown) => {
-                warnings.push(
-                  `Frame extraction failed: ${e instanceof Error ? e.message : String(e)}`,
-                );
-                return [];
-              });
+              // Extract frames: dense or scene-based
+              const rawFrames = config.denseSampling
+                ? await extractDenseFrames(videoPath, tempDir, { maxFrames }).catch(
+                    (e: unknown) => {
+                      warnings.push(
+                        `Dense frame extraction failed: ${e instanceof Error ? e.message : String(e)}`,
+                      );
+                      return [];
+                    },
+                  )
+                : await extractSceneFrames(videoPath, tempDir, {
+                    threshold,
+                    maxFrames,
+                  }).catch((e: unknown) => {
+                    warnings.push(
+                      `Frame extraction failed: ${e instanceof Error ? e.message : String(e)}`,
+                    );
+                    return [];
+                  });
 
               await reportProgress({ progress: 80, total: 100 });
 
@@ -189,7 +284,6 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
           }
 
           // Strategy 2: Browser-based extraction (fallback)
-          // Opens the video in headless Chrome, seeks to timestamps, takes screenshots
           if (!framesExtracted && metadata.duration > 0) {
             await reportProgress({ progress: 60, total: 100 });
 
@@ -219,7 +313,6 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
 
           // Post-processing: dedup, OCR, timeline
           if (result.frames.length > 0) {
-            // Deduplicate near-identical frames
             const beforeDedup = result.frames.length;
             result.frames = await deduplicateFrames(result.frames).catch((e: unknown) => {
               warnings.push(`Frame dedup failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -234,35 +327,60 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
             await reportProgress({ progress: 85, total: 100 });
 
             // OCR: extract text visible on screen
-            result.ocrResults = await extractTextFromFrames(result.frames).catch((e: unknown) => {
-              warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
-              return [];
-            });
+            if (config.includeOcr) {
+              result.ocrResults = await extractTextFromFrames(result.frames).catch((e: unknown) => {
+                warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
+                return [];
+              });
+            }
 
             await reportProgress({ progress: 95, total: 100 });
           }
 
-          // Build annotated timeline (even without frames, merges transcript)
-          result.timeline = buildAnnotatedTimeline(
-            result.transcript,
-            result.frames,
-            result.ocrResults,
-          );
+          // Build annotated timeline
+          if (config.includeTimeline) {
+            result.timeline = buildAnnotatedTimeline(
+              result.transcript,
+              result.frames,
+              result.ocrResults,
+            );
+          }
+        } else {
+          // Even without frames, try to get the video for whisper fallback
+          if (result.transcript.length === 0 && adapter.capabilities.videoDownload) {
+            tempDir = tempDir ?? (await createTempDir());
+            videoPath = await adapter.downloadVideo(url, tempDir).catch(() => null);
+          }
+        }
+
+        // Whisper fallback: if no transcript and we have a video file
+        if (result.transcript.length === 0 && videoPath) {
+          try {
+            const audioPath = await extractAudioTrack(videoPath, tempDir ?? '');
+            const whisperTranscript = await transcribeAudio(audioPath);
+            if (whisperTranscript.length > 0) {
+              result.transcript = whisperTranscript;
+              warnings.push(
+                'Transcript generated via Whisper fallback (no native transcript available).',
+              );
+            }
+          } catch {
+            // Audio extraction or transcription failed — not critical
+          }
         }
 
         await reportProgress({ progress: 100, total: 100 });
 
+        // Cache the full result
+        cache.set(key, result);
+
+        // Apply field filter
+        const filtered = filterAnalysisResult(result, fields);
+
         // Build response content
         const textData = {
-          metadata: result.metadata,
-          transcript: result.transcript,
-          comments: result.comments,
-          chapters: result.chapters,
-          ocrResults: result.ocrResults,
-          timeline: result.timeline,
-          aiSummary: result.aiSummary,
+          ...filtered,
           frameCount: result.frames.length,
-          warnings: result.warnings,
         };
 
         const content: (
@@ -270,21 +388,17 @@ Use options.skipFrames=true for transcript-only analysis (faster, no video downl
           | Awaited<ReturnType<typeof imageContent>>
         )[] = [{ type: 'text' as const, text: JSON.stringify(textData, null, 2) }];
 
-        // Add frame images
-        for (const frame of result.frames) {
-          content.push(await imageContent({ path: frame.filePath }));
+        // Add frame images (if not filtered out)
+        if (!fields || fields.includes('frames')) {
+          for (const frame of result.frames) {
+            content.push(await imageContent({ path: frame.filePath }));
+          }
         }
 
         return { content };
       } finally {
-        // Note: we don't cleanup tempDir immediately because imageContent reads files
-        // Cleanup will happen via process exit handler or on next invocation
-        if (tempDir && warnings.length > 0) {
-          // Only cleanup if we have no frames to serve
-          const hasFrames = !skipFrames;
-          if (!hasFrames) {
-            await cleanupTempDir(tempDir).catch(() => undefined);
-          }
+        if (tempDir && skipFrames) {
+          await cleanupTempDir(tempDir).catch(() => undefined);
         }
       }
     },

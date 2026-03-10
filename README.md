@@ -46,9 +46,46 @@ Returns:
 The AI will **automatically** call this tool when it sees a video URL — no need to ask.
 
 Options:
-- `maxFrames` (1-50, default 20) — cap on extracted frames
-- `threshold` (0.0-1.0, default 0.1) — scene-change sensitivity. Use 0.1 for screencasts/demos, 0.3 for live-action video
-- `skipFrames` (boolean) — skip frame extraction for transcript-only analysis (not recommended — frames are critical for understanding)
+- `detail` — analysis depth: `"brief"` (metadata + truncated transcript, no frames), `"standard"` (default), `"detailed"` (dense sampling, more frames)
+- `fields` — array of specific fields to return, e.g. `["metadata", "transcript"]`. Available: `metadata`, `transcript`, `frames`, `comments`, `chapters`, `ocrResults`, `timeline`, `aiSummary`
+- `maxFrames` (1-60, default depends on detail level) — cap on extracted frames
+- `threshold` (0.0-1.0, default 0.1) — scene-change sensitivity
+- `forceRefresh` — bypass cache and re-analyze
+- `skipFrames` — skip frame extraction for transcript-only analysis
+
+### `get_transcript` — Transcript only
+
+```
+> Get the transcript from this video
+```
+
+Quick transcript extraction. Falls back to Whisper transcription when no native transcript is available.
+
+### `get_metadata` — Metadata only
+
+```
+> What's this video about?
+```
+
+Returns metadata, comments, chapters, and AI summary without downloading the video.
+
+### `get_frames` — Frames only
+
+```
+> Extract frames from this video with dense sampling
+```
+
+Two modes:
+- **Scene-change detection** (default) — captures visual transitions
+- **Dense sampling** (`dense: true`) — 1 frame/sec for full coverage
+
+### `analyze_moment` — Deep-dive on a time range
+
+```
+> Analyze what happens between 1:30 and 2:00 in this video
+```
+
+Combines burst frame extraction + filtered transcript + OCR + annotated timeline for a focused segment. Use when you need to understand exactly what happens at a specific moment.
 
 ### `get_frame_at` — Single frame at a timestamp
 
@@ -65,6 +102,18 @@ The AI reads the transcript, spots a critical moment, and requests the exact fra
 ```
 
 For motion, vibration, animations, or fast scrolling — burst mode captures N frames in a narrow window so the AI can see frame-by-frame changes.
+
+## Detail Levels
+
+| Level | Frames | Transcript | OCR | Timeline | Use case |
+|-------|--------|-----------|-----|----------|----------|
+| `brief` | None | First 10 entries | No | No | Quick check — what's this video about? |
+| `standard` | Up to 20 (scene-change) | Full | Yes | Yes | Default — full analysis |
+| `detailed` | Up to 60 (1fps dense) | Full | Yes | Yes | Deep analysis — every second captured |
+
+## Caching
+
+Results are cached in memory for 10 minutes. Subsequent calls with the same URL and options return instantly. Use `forceRefresh: true` to bypass the cache.
 
 ## Supported Platforms
 
@@ -181,22 +230,31 @@ npm run inspect
 src/
 ├── index.ts                    # Entry point (shebang + stdio)
 ├── server.ts                   # FastMCP server + tool registration
-├── tools/                      # MCP tool definitions
-│   ├── analyze-video.ts
-│   ├── get-frame-at.ts
-│   └── get-frame-burst.ts
+├── tools/                      # MCP tool definitions (7 tools)
+│   ├── analyze-video.ts        # Full analysis with detail levels + caching
+│   ├── analyze-moment.ts       # Deep-dive on a time range
+│   ├── get-transcript.ts       # Transcript-only with Whisper fallback
+│   ├── get-metadata.ts         # Metadata + comments + chapters
+│   ├── get-frames.ts           # Frames-only (scene-change or dense)
+│   ├── get-frame-at.ts         # Single frame at timestamp
+│   └── get-frame-burst.ts      # N frames in a time range
 ├── adapters/                   # Platform-specific logic
 │   ├── adapter.interface.ts    # IVideoAdapter interface + registry
 │   ├── loom.adapter.ts         # Loom: authless GraphQL
-│   └── direct.adapter.ts      # Direct URL: any mp4/webm link
+│   └── direct.adapter.ts       # Direct URL: any mp4/webm link
 ├── processors/                 # Shared processing
-│   ├── frame-extractor.ts      # ffmpeg scene detection + extraction
+│   ├── frame-extractor.ts      # ffmpeg scene detection + dense + burst extraction
 │   ├── browser-frame-extractor.ts # Headless Chrome fallback for frames
+│   ├── audio-transcriber.ts    # Whisper fallback (HF transformers → CLI → OpenAI)
 │   ├── image-optimizer.ts      # sharp resize/compress
 │   ├── frame-dedup.ts          # Perceptual dedup (dHash + Hamming distance)
 │   ├── frame-ocr.ts            # OCR text extraction (tesseract.js)
 │   └── annotated-timeline.ts   # Unified timeline (transcript + frames + OCR)
+├── config/
+│   └── detail-levels.ts        # brief / standard / detailed config
 ├── utils/
+│   ├── cache.ts                # In-memory TTL cache with LRU eviction
+│   ├── field-filter.ts         # Selective field filtering for responses
 │   ├── url-detector.ts         # Platform detection from URL
 │   ├── vtt-parser.ts           # WebVTT → transcript entries
 │   └── temp-files.ts           # Temp directory management

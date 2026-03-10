@@ -7,8 +7,7 @@ import { extractFrameAt, probeVideoDuration } from '../src/processors/frame-extr
 import { optimizeFrame } from '../src/processors/image-optimizer.js';
 import { createTempDir, cleanupTempDir } from '../src/utils/temp-files.js';
 
-// Public test video — Big Buck Bunny sample (small clip)
-const TEST_VIDEO_URL = 'https://www.w3schools.com/html/mov_bbb.mp4';
+import { TEST_DIRECT_VIDEO_URL as TEST_VIDEO_URL } from './fixtures.js';
 
 describe('E2E: Direct video analysis', () => {
   let tempDir: string;

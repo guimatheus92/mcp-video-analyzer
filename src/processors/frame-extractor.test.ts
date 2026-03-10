@@ -8,6 +8,7 @@ import {
   parseSceneTimestamps,
   probeVideoDuration,
   extractFrameAt,
+  extractDenseFrames,
 } from './frame-extractor.js';
 import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
 
@@ -99,6 +100,69 @@ describe('extractFrameAt', () => {
       expect(result.time).toBe('0:01');
       expect(result.mimeType).toBe('image/jpeg');
       expect(existsSync(result.filePath)).toBe(true);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+});
+
+describe('extractDenseFrames', () => {
+  it('extracts frames from tiny.mp4 at 1 fps', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const frames = await extractDenseFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+        fps: 1,
+        maxFrames: 10,
+      });
+
+      // tiny.mp4 is ~3 seconds, so expect ~3 frames at 1fps
+      expect(frames.length).toBeGreaterThanOrEqual(2);
+      expect(frames.length).toBeLessThanOrEqual(4);
+      expect(frames[0].mimeType).toBe('image/jpeg');
+      expect(frames[0].time).toBe('0:00');
+
+      for (const frame of frames) {
+        expect(existsSync(frame.filePath)).toBe(true);
+      }
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('caps frames at maxFrames', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const frames = await extractDenseFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+        fps: 10, // Would produce ~30 frames for 3s video
+        maxFrames: 5,
+      });
+
+      expect(frames.length).toBeLessThanOrEqual(5);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('throws for non-existent video', async () => {
+    const tempDir = await createTempDir();
+    try {
+      await expect(extractDenseFrames('/nonexistent/video.mp4', tempDir)).rejects.toThrow();
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('produces frames with correct timestamp format', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const frames = await extractDenseFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+        fps: 1,
+        maxFrames: 10,
+      });
+
+      for (const frame of frames) {
+        expect(frame.time).toMatch(/^\d+:\d{2}$/);
+      }
     } finally {
       await cleanupTempDir(tempDir);
     }

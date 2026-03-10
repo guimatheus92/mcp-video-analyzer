@@ -55,7 +55,6 @@ describe('analyze_video tool', () => {
   });
 
   it('registers the tool on the server', () => {
-    // Tool registration doesn't throw
     expect(server).toBeDefined();
   });
 
@@ -63,8 +62,6 @@ describe('analyze_video tool', () => {
     const mockAdapter = createMockAdapter();
     registerAdapter(mockAdapter);
 
-    // Access the tool's execute function via the server internals
-    // We test via the adapter mock being called correctly
     expect(mockAdapter.canHandle('https://www.loom.com/share/test123')).toBe(true);
     expect(mockAdapter.getMetadata).toBeDefined();
     expect(mockAdapter.getTranscript).toBeDefined();
@@ -84,5 +81,102 @@ describe('analyze_video tool', () => {
     registerAdapter(mockAdapter);
 
     expect(mockAdapter.capabilities.videoDownload).toBe(false);
+  });
+});
+
+describe('analyze_video detail levels', () => {
+  beforeEach(() => {
+    clearAdapters();
+  });
+
+  afterEach(() => {
+    clearAdapters();
+  });
+
+  it('brief config has includeFrames=false', async () => {
+    // Verify that brief mode config correctly skips frames
+    const { getDetailConfig } = await import('../config/detail-levels.js');
+    const briefConfig = getDetailConfig('brief');
+    expect(briefConfig.includeFrames).toBe(false);
+    expect(briefConfig.maxFrames).toBe(0);
+    expect(briefConfig.transcriptMaxEntries).toBe(10);
+  });
+
+  it('standard config matches v0.1 defaults', async () => {
+    const { getDetailConfig } = await import('../config/detail-levels.js');
+    const standardConfig = getDetailConfig('standard');
+    expect(standardConfig.includeFrames).toBe(true);
+    expect(standardConfig.maxFrames).toBe(20);
+    expect(standardConfig.denseSampling).toBe(false);
+  });
+
+  it('detailed config enables dense sampling', async () => {
+    const { getDetailConfig } = await import('../config/detail-levels.js');
+    const detailedConfig = getDetailConfig('detailed');
+    expect(detailedConfig.denseSampling).toBe(true);
+    expect(detailedConfig.maxFrames).toBe(60);
+  });
+});
+
+describe('analyze_video field filtering', () => {
+  it('filterAnalysisResult returns only requested fields', async () => {
+    const { filterAnalysisResult } = await import('../utils/field-filter.js');
+    const fullResult = {
+      metadata: {
+        platform: 'loom' as const,
+        title: 'Test',
+        duration: 60,
+        durationFormatted: '1:00',
+        url: 'https://loom.com/share/test',
+      },
+      transcript: [{ time: '0:05', text: 'Hello' }],
+      frames: [],
+      comments: [],
+      chapters: [],
+      ocrResults: [],
+      timeline: [],
+      warnings: ['test warning'],
+    };
+
+    const filtered = filterAnalysisResult(fullResult, ['metadata']);
+    expect(filtered.metadata).toBeDefined();
+    expect(filtered.warnings).toBeDefined();
+    expect(filtered.transcript).toBeUndefined();
+    expect(filtered.frames).toBeUndefined();
+  });
+});
+
+describe('analyze_video caching', () => {
+  it('cache stores and retrieves results', async () => {
+    const { AnalysisCache, cacheKey } = await import('../utils/cache.js');
+    const testCache = new AnalysisCache({ ttlMs: 10_000 });
+    const key = cacheKey('https://loom.com/share/test', { detail: 'standard' });
+
+    const result = {
+      metadata: {
+        platform: 'loom' as const,
+        title: 'Test',
+        duration: 60,
+        durationFormatted: '1:00',
+        url: 'https://loom.com/share/test',
+      },
+      transcript: [{ time: '0:05', text: 'Hello' }],
+      frames: [],
+      comments: [],
+      chapters: [],
+      ocrResults: [],
+      timeline: [],
+      warnings: [],
+    };
+
+    testCache.set(key, result);
+    expect(testCache.get(key)).toEqual(result);
+  });
+
+  it('cache key is different for different detail levels', async () => {
+    const { cacheKey } = await import('../utils/cache.js');
+    const key1 = cacheKey('https://loom.com/share/test', { detail: 'brief' });
+    const key2 = cacheKey('https://loom.com/share/test', { detail: 'detailed' });
+    expect(key1).not.toBe(key2);
   });
 });
