@@ -16,33 +16,41 @@ export function createServer(): FastMCP {
     version: '0.2.0',
     instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs.
 
-IMPORTANT: When a user shares a video URL (loom.com/share/..., .mp4, .webm, .mov), ALWAYS call analyze_video automatically — do not ask for confirmation.
+AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:
+- When the user shares a video URL → call analyze_video immediately (detail="standard").
+- When discussing a specific moment in a video → call analyze_moment with the time range.
+- When the user asks "what happens at X:XX" → call get_frame_at or analyze_moment.
+- When the user asks to compare frames or see motion → call get_frame_burst.
+- When the transcript alone would answer the question → call get_transcript (faster, no download).
+- When only metadata is needed (title, duration, comments) → call get_metadata (no download).
+
+The AI should ALWAYS call the appropriate tool automatically — never ask "would you like me to analyze this video?" Just do it.
 
 Supported platforms:
 - Loom (loom.com/share/...) — transcript, metadata, comments, frames (no auth needed)
 - Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing
 
-Tools:
-- analyze_video: Full analysis with configurable detail levels (brief/standard/detailed), field filtering, and caching.
-- get_transcript: Quick transcript-only extraction with Whisper fallback.
-- get_metadata: Quick metadata + comments + chapters extraction.
-- get_frames: Frame-only extraction (scene-change or dense sampling).
-- get_frame_at: Single frame at a specific timestamp.
-- get_frame_burst: N frames across a narrow time range for motion analysis.
-- analyze_moment: Deep-dive on a specific time range — burst frames + filtered transcript + OCR + mini-timeline.
+Tools (choose the most efficient one for the task):
+- analyze_video: Full analysis. Use by default when a video URL appears. Returns transcript + frames + metadata + OCR + timeline.
+  - detail="brief" → fast, metadata + truncated transcript, no video download
+  - detail="standard" → default, scene-change frames + full transcript + OCR
+  - detail="detailed" → dense 1fps sampling, more frames, thorough OCR
+  - fields=["metadata","transcript"] → return only specific fields
+  - Cached for 10min — use forceRefresh=true to re-analyze.
+- get_transcript: Transcript only. Faster than analyze_video when you only need what was said. Whisper fallback for videos without native transcripts.
+- get_metadata: Metadata + comments + chapters. No video download needed.
+- get_frames: Frames only (scene-change or dense=true for 1fps). Use when you need visuals without transcript.
+- get_frame_at: Single frame at a timestamp. Use when the transcript reveals an interesting moment and you want to see it.
+- get_frame_burst: N frames in a narrow time range. Use for motion, animations, fast UI changes.
+- analyze_moment: Deep-dive on a time range. Combines burst frames + filtered transcript + OCR + mini-timeline. Use when the user asks about a specific part of the video.
 
-Detail levels (for analyze_video):
-- "brief": metadata + truncated transcript only (fast, no video download)
-- "standard": full analysis with scene-change frames (default)
-- "detailed": dense sampling (1 frame/sec), more frames, full OCR
-
-Workflow tips:
-1. Use get_transcript or get_metadata for quick checks.
-2. Use analyze_video for full analysis (detail="standard" by default).
-3. Use analyze_moment to deep-dive into a specific time range.
-4. Use get_frame_at / get_frame_burst for targeted frame extraction.
-5. Use fields=["metadata","transcript"] to get only what you need.
-6. Results are cached — use forceRefresh=true to re-analyze.`,
+Decision flow:
+1. User shares a video URL → analyze_video (standard)
+2. User asks about a specific timestamp → analyze_moment or get_frame_at
+3. User asks "what did they say about X" → get_transcript (fast, no download)
+4. User asks "how long is this video" → get_metadata (fast, no download)
+5. User asks for more detail after initial analysis → analyze_video (detailed) or analyze_moment
+6. User asks to see motion/animation → get_frame_burst`,
   });
 
   // Register adapters (order matters: more specific first)
