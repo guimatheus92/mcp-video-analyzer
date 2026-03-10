@@ -1,0 +1,40 @@
+{
+  "totalCount": 60,
+  "savedSamples": 6,
+  "maxFrames": 60,
+  "duration": 174.86,
+  "firstTime": "0:00",
+  "lastTime": "2:52",
+  "samples": [
+    {
+      "filename": "dense_001.jpg",
+      "time": "0:00",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "dense_002.jpg",
+      "time": "0:29",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "dense_003.jpg",
+      "time": "0:58",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "dense_004.jpg",
+      "time": "1:27",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "dense_005.jpg",
+      "time": "1:57",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "dense_006.jpg",
+      "time": "2:26",
+      "mimeType": "image/jpeg"
+    }
+  ]
+}

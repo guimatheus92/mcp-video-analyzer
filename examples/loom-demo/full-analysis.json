@@ -1,0 +1,477 @@
+{
+  "url": "https://www.loom.com/share/bdebdfe44b294225ac718bad241a94fe",
+  "detail": "standard",
+  "metadata": {
+    "platform": "loom",
+    "title": "Boost In-App Demo Video",
+    "duration": 175,
+    "durationFormatted": "2:55",
+    "url": "https://www.loom.com/share/bdebdfe44b294225ac718bad241a94fe"
+  },
+  "transcript": [
+    {
+      "time": "0:01",
+      "text": "Hi, I'm Josh Owens co-founder of boost.",
+      "endTime": "0:03",
+      "speaker": "1"
+    },
+    {
+      "time": "0:04",
+      "text": "Boost is super easy for students to download it's free in the app store.",
+      "endTime": "0:07"
+    },
+    {
+      "time": "0:07",
+      "text": "And after a few details on how to use boost, we ask a student",
+      "endTime": "0:10"
+    },
+    {
+      "time": "0:10",
+      "text": "to select their school and log in using their canvas credentials.",
+      "endTime": "0:13"
+    },
+    {
+      "time": "0:13",
+      "text": "After that boost is good to go for the rest of the semester,",
+      "endTime": "0:16"
+    },
+    {
+      "time": "0:16",
+      "text": "students get assignment notifications sent directly to their phone,",
+      "endTime": "0:19"
+    },
+    {
+      "time": "0:19",
+      "text": "reminding them of what they have not yet submitted increasing assignment ins and grades.",
+      "endTime": "0:24"
+    },
+    {
+      "time": "0:24",
+      "text": "The app is easy for students and parents to use.",
+      "endTime": "0:27"
+    },
+    {
+      "time": "0:27",
+      "text": "The first tab shows boosts sent to the students vote.",
+      "endTime": "0:29"
+    },
+    {
+      "time": "0:30",
+      "text": "The second tab, let's say student, add their own work or events that start",
+      "endTime": "0:33"
+    },
+    {
+      "time": "0:33",
+      "text": "on canvas. And the third tab is the planner,",
+      "endTime": "0:36"
+    },
+    {
+      "time": "0:36",
+      "text": "which shows upcoming assignments by class and details on how to complete them.",
+      "endTime": "0:40"
+    },
+    {
+      "time": "0:41",
+      "text": "If a student clicks on an assignment in the planner,",
+      "endTime": "0:44"
+    },
+    {
+      "time": "0:45",
+      "text": "it sends them to the direct canvas link to get more information on the",
+      "endTime": "0:48"
+    },
+    {
+      "time": "0:48",
+      "text": "assignment or to complete the work as needed if that is available for them.",
+      "endTime": "0:52"
+    },
+    {
+      "time": "0:53",
+      "text": "So the integration to canvas is seamless for a student and boost makes it",
+      "endTime": "0:57"
+    },
+    {
+      "time": "0:57",
+      "text": "easy for a student to not just see what needs to be done,",
+      "endTime": "1:00"
+    },
+    {
+      "time": "1:00",
+      "text": "but also go directly to the work, to complete it on time.",
+      "endTime": "1:03"
+    },
+    {
+      "time": "1:10",
+      "text": "If we go back to the notification tab,",
+      "endTime": "1:12",
+      "speaker": "1"
+    },
+    {
+      "time": "1:13",
+      "text": "you can see details on the notification sent to the student's phone,",
+      "endTime": "1:17"
+    },
+    {
+      "time": "1:18",
+      "text": "and the notifications are linked to assignments in canvas via the planner.",
+      "endTime": "1:22"
+    },
+    {
+      "time": "1:22",
+      "text": "So students can get right to work without searching for what is needed to",
+      "endTime": "1:26"
+    },
+    {
+      "time": "1:26",
+      "text": "turn in. Sometimes students have",
+      "endTime": "1:31"
+    },
+    {
+      "time": "1:31",
+      "text": "things they need to turn in on their own, and one reminders for that",
+      "endTime": "1:34"
+    },
+    {
+      "time": "1:34",
+      "text": "as well. That's why we've included the add activity tab.",
+      "endTime": "1:37"
+    },
+    {
+      "time": "1:38",
+      "text": "So students can keep track of all the things they need to get done,",
+      "endTime": "1:41"
+    },
+    {
+      "time": "1:41",
+      "text": "whether the instructor has put it into canvas or not.",
+      "endTime": "1:44"
+    },
+    {
+      "time": "1:44",
+      "text": "And we give students the ability to set reminders on these items,",
+      "endTime": "1:48"
+    },
+    {
+      "time": "1:48",
+      "text": "just like the assignment data we pull directly from canvas,",
+      "endTime": "1:51"
+    },
+    {
+      "time": "1:56",
+      "text": "And that activity then gets added to the student's planner in boost with their",
+      "endTime": "2:00"
+    },
+    {
+      "time": "2:00",
+      "text": "preferences set. So they don't miss any work,",
+      "endTime": "2:02"
+    },
+    {
+      "time": "2:03",
+      "text": "whether it's in canvas or not.",
+      "endTime": "2:04"
+    },
+    {
+      "time": "2:12",
+      "text": "Finally in the top, right of this is the settings tab here.",
+      "endTime": "2:16",
+      "speaker": "1"
+    },
+    {
+      "time": "2:16",
+      "text": "Students can set their individual preferences for notifications sent to their phone,",
+      "endTime": "2:20"
+    },
+    {
+      "time": "2:21",
+      "text": "and we let them set those preferences by class and by notification type.",
+      "endTime": "2:24"
+    },
+    {
+      "time": "2:25",
+      "text": "So they can make sure to get exactly the help they need to succeed",
+      "endTime": "2:28"
+    },
+    {
+      "time": "2:28",
+      "text": "when they need it. And for the classes that they need it for.",
+      "endTime": "2:31"
+    },
+    {
+      "time": "2:33",
+      "text": "We also include privacy statements, student help,",
+      "endTime": "2:36"
+    },
+    {
+      "time": "2:36",
+      "text": "and an FAQ right here for students to reference.",
+      "endTime": "2:38"
+    },
+    {
+      "time": "2:38",
+      "text": "If they get confused about using boost",
+      "endTime": "2:40"
+    },
+    {
+      "time": "2:46",
+      "text": "And they can even email us directly@helpatboost.education from the app,",
+      "endTime": "2:51",
+      "speaker": "1"
+    },
+    {
+      "time": "2:51",
+      "text": "if they run into any issues, that's boost",
+      "endTime": "2:54"
+    }
+  ],
+  "comments": [],
+  "chapters": [],
+  "aiSummary": null,
+  "frames": [
+    {
+      "filename": "scene_001.jpg",
+      "time": "0:44",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "scene_002.jpg",
+      "time": "0:44",
+      "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "scene_003.jpg",
+      "time": "0:44",
+      "mimeType": "image/jpeg"
+    }
+  ],
+  "ocrResults": [
+    {
+      "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_001.jpg",
+      "text": "(skipped in generator)"
+    },
+    {
+      "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_002.jpg",
+      "text": "(skipped in generator)"
+    },
+    {
+      "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_003.jpg",
+      "text": "(skipped in generator)"
+    }
+  ],
+  "timeline": [
+    {
+      "time": "0:01",
+      "seconds": 1,
+      "frameIndex": 0
+    },
+    {
+      "time": "0:04",
+      "seconds": 4,
+      "frameIndex": 1
+    },
+    {
+      "time": "0:07",
+      "seconds": 7,
+      "frameIndex": 2
+    },
+    {
+      "time": "0:10",
+      "seconds": 10,
+      "frameIndex": 3
+    },
+    {
+      "time": "0:13",
+      "seconds": 13,
+      "frameIndex": 4
+    },
+    {
+      "time": "0:16",
+      "seconds": 16,
+      "frameIndex": 5
+    },
+    {
+      "time": "0:19",
+      "seconds": 19,
+      "frameIndex": 6
+    },
+    {
+      "time": "0:24",
+      "seconds": 24,
+      "frameIndex": 7
+    },
+    {
+      "time": "0:27",
+      "seconds": 27,
+      "frameIndex": 8
+    },
+    {
+      "time": "0:30",
+      "seconds": 30,
+      "frameIndex": 9
+    },
+    {
+      "time": "0:33",
+      "seconds": 33,
+      "frameIndex": 10
+    },
+    {
+      "time": "0:36",
+      "seconds": 36,
+      "frameIndex": 11
+    },
+    {
+      "time": "0:41",
+      "seconds": 41,
+      "frameIndex": 12
+    },
+    {
+      "time": "0:44",
+      "seconds": 44,
+      "frameIndex": 13
+    },
+    {
+      "time": "0:44",
+      "seconds": 44
+    },
+    {
+      "time": "0:44",
+      "seconds": 44
+    },
+    {
+      "time": "0:48",
+      "seconds": 48,
+      "frameIndex": 14
+    },
+    {
+      "time": "0:53",
+      "seconds": 53,
+      "frameIndex": 15
+    },
+    {
+      "time": "0:57",
+      "seconds": 57,
+      "frameIndex": 16
+    },
+    {
+      "time": "1:00",
+      "seconds": 60,
+      "frameIndex": 17
+    },
+    {
+      "time": "1:10",
+      "seconds": 70,
+      "frameIndex": 18
+    },
+    {
+      "time": "1:13",
+      "seconds": 73,
+      "frameIndex": 19
+    },
+    {
+      "time": "1:18",
+      "seconds": 78,
+      "frameIndex": 20
+    },
+    {
+      "time": "1:22",
+      "seconds": 82,
+      "frameIndex": 21
+    },
+    {
+      "time": "1:26",
+      "seconds": 86,
+      "frameIndex": 22
+    },
+    {
+      "time": "1:31",
+      "seconds": 91,
+      "frameIndex": 23
+    },
+    {
+      "time": "1:34",
+      "seconds": 94,
+      "frameIndex": 24
+    },
+    {
+      "time": "1:38",
+      "seconds": 98,
+      "frameIndex": 25
+    },
+    {
+      "time": "1:41",
+      "seconds": 101,
+      "frameIndex": 26
+    },
+    {
+      "time": "1:44",
+      "seconds": 104,
+      "frameIndex": 27
+    },
+    {
+      "time": "1:48",
+      "seconds": 108,
+      "frameIndex": 28
+    },
+    {
+      "time": "1:56",
+      "seconds": 116,
+      "frameIndex": 29
+    },
+    {
+      "time": "2:00",
+      "seconds": 120,
+      "frameIndex": 30
+    },
+    {
+      "time": "2:03",
+      "seconds": 123,
+      "frameIndex": 31
+    },
+    {
+      "time": "2:12",
+      "seconds": 132,
+      "frameIndex": 32
+    },
+    {
+      "time": "2:16",
+      "seconds": 136,
+      "frameIndex": 33
+    },
+    {
+      "time": "2:21",
+      "seconds": 141,
+      "frameIndex": 34
+    },
+    {
+      "time": "2:25",
+      "seconds": 145,
+      "frameIndex": 35
+    },
+    {
+      "time": "2:28",
+      "seconds": 148,
+      "frameIndex": 36
+    },
+    {
+      "time": "2:33",
+      "seconds": 153,
+      "frameIndex": 37
+    },
+    {
+      "time": "2:36",
+      "seconds": 156,
+      "frameIndex": 39
+    },
+    {
+      "time": "2:46",
+      "seconds": 166,
+      "frameIndex": 40
+    },
+    {
+      "time": "2:51",
+      "seconds": 171,
+      "frameIndex": 41
+    }
+  ],
+  "warnings": []
+}
