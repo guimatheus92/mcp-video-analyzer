@@ -13,6 +13,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - `npm run lint:fix` — auto-fix lint issues
 - `npm run format` — auto-format with Prettier
 - `npm run inspect` — open FastMCP inspector for manual testing
+- `npx tsx examples/generate.ts` — regenerate example outputs (run after changing tool output format, processors, or adapters)
 
 ## Architecture
 

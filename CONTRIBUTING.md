@@ -67,12 +67,23 @@ src/
 4. Add URL pattern detection in `src/utils/url-detector.ts`
 5. Run `npm run check` to verify everything passes
 
+## Updating Examples
+
+The `examples/loom-demo/` folder contains real outputs used as documentation and regression baselines. **Regenerate after any change to tool output format, processors, or adapters:**
+
+```bash
+npx tsx examples/generate.ts
+```
+
+This downloads the Loom demo video, runs all processors, and saves JSON + frame images. Requires yt-dlp and network access.
+
 ## Submitting Changes
 
 1. Fork the repo and create a feature branch
 2. Make your changes with tests
 3. Run `npm run check` — all checks must pass
-4. Open a pull request with a clear description of what and why
+4. If you changed tool output format or processors, regenerate examples: `npx tsx examples/generate.ts`
+5. Open a pull request with a clear description of what and why
 
 ## Reporting Issues
 

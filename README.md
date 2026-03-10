@@ -165,45 +165,24 @@ claude mcp add chrome-devtools npx @anthropic-ai/mcp-devtools@latest
 
 The two MCPs complement each other: video analyzer understands **recorded** content, DevTools interacts with **live** pages.
 
-## Sample Output
+## Example Output
 
-### analyze_video with a Loom URL (skipFrames: true)
+The [`examples/loom-demo/`](examples/loom-demo/) folder contains **real outputs** from analyzing a public Loom video ([Boost In-App Demo Video](https://www.loom.com/share/bdebdfe44b294225ac718bad241a94fe), 2:55).
 
-```json
-{
-  "metadata": {
-    "platform": "loom",
-    "title": "Bug: Cart total not updating",
-    "description": "Demonstrating the cart total bug on the checkout page",
-    "duration": 154.5,
-    "durationFormatted": "2:34",
-    "url": "https://www.loom.com/share/abc123..."
-  },
-  "transcript": [
-    { "time": "0:05", "text": "So when I click add to cart..." },
-    { "time": "0:12", "text": "The total stays at zero..." },
-    { "time": "0:18", "speaker": "Guilherme", "text": "Let me show you the console..." }
-  ],
-  "comments": [
-    { "author": "John", "text": "This also happens on mobile", "time": "0:12" },
-    { "author": "Sarah", "text": "Confirmed on iOS Safari too" }
-  ],
-  "ocrResults": [
-    { "time": "0:18", "text": "TypeError: Cannot read property 'total' of undefined", "confidence": 92 }
-  ],
-  "timeline": [
-    { "time": "0:05", "seconds": 5, "transcript": "So when I click add to cart...", "frameIndex": 0 },
-    { "time": "0:12", "seconds": 12, "transcript": "The total stays at zero...", "frameIndex": 1 },
-    { "time": "0:18", "seconds": 18, "transcript": "Let me show you the console...", "frameIndex": 2, "ocrText": "TypeError: Cannot read property 'total' of undefined" }
-  ],
-  "frameCount": 3,
-  "warnings": []
-}
-```
+| File | What it shows |
+|------|--------------|
+| [`metadata.json`](examples/loom-demo/metadata.json) | Title, duration, platform |
+| [`transcript.json`](examples/loom-demo/transcript.json) | 42 timestamped entries with speaker IDs |
+| [`timeline.json`](examples/loom-demo/timeline.json) | Unified chronological view (transcript + frames merged) |
+| [`moment-transcript-0m30s-0m45s.json`](examples/loom-demo/moment-transcript-0m30s-0m45s.json) | Filtered transcript for `analyze_moment` (0:30–0:45) |
+| [`full-analysis.json`](examples/loom-demo/full-analysis.json) | Complete `analyze_video` output |
 
-### get_frame_at with a direct video URL
+**Frame images** (19 total in [`examples/loom-demo/frames/`](examples/loom-demo/frames/)):
+- `scene_*.jpg` — scene-change detection (key visual transitions)
+- `dense_*.jpg` — 1fps dense sampling (every 10th frame saved as sample)
+- `burst_*.jpg` — burst extraction for moment analysis (0:30–0:45)
 
-Returns the frame as an inline image that the AI can see and analyze.
+> **Regenerate after changes:** `npx tsx examples/generate.ts` — requires yt-dlp + network access.
 
 ## Development
 
