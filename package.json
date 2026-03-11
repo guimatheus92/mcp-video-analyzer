@@ -1,6 +1,6 @@
 {
   "name": "mcp-video-analyzer",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server for video analysis — extracts transcripts, key frames, OCR text, and metadata from video URLs. Supports Loom and direct video files.",
   "author": "guimatheus92",
   "license": "MIT",
@@ -56,23 +56,23 @@
     "node": ">=18"
   },
   "dependencies": {
-    "cheerio": "^1.0.0",
-    "fastmcp": "^1.0.0",
-    "ffmpeg-static": "^5.2.0",
-    "puppeteer-core": "^24.38.0",
-    "sharp": "^0.33.0",
+    "cheerio": "^1.2.0",
+    "fastmcp": "^3.34.0",
+    "ffmpeg-static": "^5.3.0",
+    "puppeteer-core": "^24.39.0",
+    "sharp": "^0.34.5",
     "tesseract.js": "^7.0.0",
-    "zod": "^3.23.8"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^22.10.0",
+    "@types/node": "^25.4.0",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^10.0.3",
     "knip": "^5.86.0",
     "prettier": "^3.8.1",
-    "typescript": "^5.7.2",
-    "typescript-eslint": "^8.56.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.0",
     "vitest": "^4.0.18"
   }
 }
