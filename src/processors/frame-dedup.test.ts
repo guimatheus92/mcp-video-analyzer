@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import sharp from 'sharp';
-import { computeDHash, hammingDistance, deduplicateFrames } from './frame-dedup.js';
+import {
+  computeDHash,
+  hammingDistance,
+  deduplicateFrames,
+  isBlackFrame,
+  filterBlackFrames,
+} from './frame-dedup.js';
 import type { IFrameResult } from '../types.js';
 
 async function createTestImage(
@@ -129,7 +135,71 @@ describe('frame-dedup', () => {
       const result = await deduplicateFrames(frames);
       expect(result).toHaveLength(1); // All identical → keep first only
     });
+  });
 
+  describe('isBlackFrame', () => {
+    it('detects a fully black frame', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'black-test-'));
+      const path = await createTestImage(dir, 'black.jpg', { r: 0, g: 0, b: 0 });
+      expect(await isBlackFrame(path)).toBe(true);
+    });
+
+    it('detects a nearly black frame', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'black-test-'));
+      const path = await createTestImage(dir, 'dark.jpg', { r: 5, g: 5, b: 5 });
+      expect(await isBlackFrame(path)).toBe(true);
+    });
+
+    it('does not flag a bright frame', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'black-test-'));
+      const path = await createTestImage(dir, 'bright.jpg', { r: 200, g: 200, b: 200 });
+      expect(await isBlackFrame(path)).toBe(false);
+    });
+
+    it('returns false for invalid file', async () => {
+      expect(await isBlackFrame('/nonexistent/path.jpg')).toBe(false);
+    });
+  });
+
+  describe('filterBlackFrames', () => {
+    it('removes black frames from array', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'black-filter-'));
+      const blackPath = await createTestImage(dir, 'black.jpg', { r: 0, g: 0, b: 0 });
+      const brightPath = await createTestImage(dir, 'bright.jpg', { r: 200, g: 100, b: 50 });
+
+      const frames: IFrameResult[] = [
+        { time: '0:01', filePath: blackPath, mimeType: 'image/jpeg' },
+        { time: '0:02', filePath: brightPath, mimeType: 'image/jpeg' },
+        { time: '0:03', filePath: blackPath, mimeType: 'image/jpeg' },
+      ];
+
+      const result = await filterBlackFrames(frames);
+      expect(result.frames).toHaveLength(1);
+      expect(result.removedCount).toBe(2);
+      expect(result.frames[0].time).toBe('0:02');
+    });
+
+    it('returns empty result for all-black frames', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'black-filter-'));
+      const blackPath = await createTestImage(dir, 'black.jpg', { r: 0, g: 0, b: 0 });
+
+      const frames: IFrameResult[] = [
+        { time: '0:01', filePath: blackPath, mimeType: 'image/jpeg' },
+      ];
+
+      const result = await filterBlackFrames(frames);
+      expect(result.frames).toHaveLength(0);
+      expect(result.removedCount).toBe(1);
+    });
+
+    it('handles empty input', async () => {
+      const result = await filterBlackFrames([]);
+      expect(result.frames).toHaveLength(0);
+      expect(result.removedCount).toBe(0);
+    });
+  });
+
+  describe('deduplicateFrames - different frames', () => {
     it('keeps frames that are different enough', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'dedup-test-'));
 

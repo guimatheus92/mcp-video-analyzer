@@ -9,7 +9,7 @@ import {
   formatTimestamp,
 } from '../processors/frame-extractor.js';
 import { extractBrowserFrames, generateTimestamps } from '../processors/browser-frame-extractor.js';
-import { deduplicateFrames } from '../processors/frame-dedup.js';
+import { deduplicateFrames, filterBlackFrames } from '../processors/frame-dedup.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createTempDir } from '../utils/temp-files.js';
 
@@ -140,6 +140,20 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
           warnings.push(`Browser extraction failed: ${e instanceof Error ? e.message : String(e)}`);
           return [];
         });
+      }
+
+      // Filter black/blank frames
+      if (frames.length > 0) {
+        const blackResult = await filterBlackFrames(frames).catch(() => ({
+          frames,
+          removedCount: 0,
+        }));
+        if (blackResult.removedCount > 0) {
+          warnings.push(
+            `Removed ${blackResult.removedCount} black/blank frame(s) — video may be DRM-protected`,
+          );
+        }
+        frames = blackResult.frames;
       }
 
       // Dedup

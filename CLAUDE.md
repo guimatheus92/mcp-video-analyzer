@@ -10,6 +10,8 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - `npm run build` — compile TypeScript to dist/
 - `npm run test` — run unit tests (vitest)
 - `npm run test:watch` — run tests in watch mode
+- `npm run test:smoke` — build + verify MCP server starts and responds to initialize
+- `npm run verify-package` — build + pack tarball + install in temp dir + verify startup (pre-publish)
 - `npm run lint:fix` — auto-fix lint issues
 - `npm run format` — auto-format with Prettier
 - `npm run inspect` — open FastMCP inspector for manual testing
@@ -29,8 +31,17 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - Tests live next to source files: `foo.ts` → `foo.test.ts`.
 - Use `vitest` with `pool: 'forks'` (required on Windows).
 - Graceful degradation: never throw when partial results are available. Use `warnings[]` array.
-- Two-strategy frame extraction: yt-dlp+ffmpeg (primary) → headless Chrome (fallback). Both are optional.
+- Three-strategy video download: yt-dlp (primary) → direct HTTP via Loom CDN API (fallback) → headless Chrome screenshots (last resort).
+- Frame extraction uses bundled `ffmpeg-static` — no system ffmpeg needed.
+- Black frame detection filters out DRM-protected/blank frames automatically.
 - Scene detection threshold default: 0.1 (optimized for screencasts/demos).
+
+## Publishing
+
+- Always run `npm run test:smoke` before publishing to verify the server starts.
+- Run `npm run verify-package` to test the tarball installs and starts in a clean environment.
+- Keep `server.ts` version in sync with `package.json` version.
+- Source maps are disabled in tsconfig to reduce package size.
 
 ## Dependencies
 

@@ -5,6 +5,46 @@ const HASH_WIDTH = 9;
 const HASH_HEIGHT = 8;
 
 /**
+ * Check if a frame is effectively black/blank.
+ * Computes the mean brightness of the image — if below threshold, it's black.
+ */
+export async function isBlackFrame(filePath: string, threshold = 10): Promise<boolean> {
+  try {
+    const { channels } = await sharp(filePath).stats();
+    // Average the mean of all channels (R, G, B)
+    const meanBrightness = channels.reduce((sum, ch) => sum + ch.mean, 0) / channels.length;
+    return meanBrightness < threshold;
+  } catch {
+    return false; // If we can't analyze, keep the frame
+  }
+}
+
+/**
+ * Filter out black/blank frames from the array.
+ * Returns the filtered frames and count of removed frames.
+ */
+export async function filterBlackFrames(
+  frames: IFrameResult[],
+  threshold = 10,
+): Promise<{ frames: IFrameResult[]; removedCount: number }> {
+  if (frames.length === 0) return { frames, removedCount: 0 };
+
+  const results = await Promise.all(
+    frames.map(async (frame) => ({
+      frame,
+      isBlack: await isBlackFrame(frame.filePath, threshold),
+    })),
+  );
+
+  const filtered = results.filter((r) => !r.isBlack).map((r) => r.frame);
+
+  return {
+    frames: filtered,
+    removedCount: frames.length - filtered.length,
+  };
+}
+
+/**
  * Compute a difference hash (dHash) for an image.
  * Resize to 9x8 grayscale, then compare each pixel to its right neighbor.
  * Returns a Buffer of 9 bytes (72 bits), one bit per pixel comparison.

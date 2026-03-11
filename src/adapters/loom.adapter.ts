@@ -1,7 +1,9 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, createWriteStream } from 'node:fs';
+import { pipeline } from 'node:stream/promises';
+import { Readable } from 'node:stream';
 import type {
   ITranscriptEntry,
   IVideoMetadata,
@@ -211,21 +213,76 @@ export class LoomAdapter implements IVideoAdapter {
   }
 
   async downloadVideo(url: string, destDir: string): Promise<string | null> {
-    // Try yt-dlp for Loom video download (works without auth for public videos)
-    const ytDlp = await findYtDlp();
-    if (!ytDlp) return null;
-
     const videoId = extractLoomId(url);
     const outputPath = join(destDir, `${videoId ?? 'loom_video'}.mp4`);
 
-    try {
-      await execFile(ytDlp.bin, [...ytDlp.prefix, '-o', outputPath, '--no-warnings', '-q', url], {
-        timeout: 120000,
-      });
-      return existsSync(outputPath) ? outputPath : null;
-    } catch {
-      return null;
+    // Strategy 1: yt-dlp (best quality, handles edge cases)
+    const ytDlp = await findYtDlp();
+    if (ytDlp) {
+      try {
+        await execFile(ytDlp.bin, [...ytDlp.prefix, '-o', outputPath, '--no-warnings', '-q', url], {
+          timeout: 120000,
+        });
+        if (existsSync(outputPath)) return outputPath;
+      } catch {
+        // Fall through to direct download
+      }
     }
+
+    // Strategy 2: Direct HTTP download via Loom CDN URL
+    if (!videoId) return null;
+    const videoUrl = await this.fetchVideoUrl(videoId);
+    if (videoUrl) {
+      try {
+        const response = await fetch(videoUrl);
+        if (response.ok && response.body) {
+          const nodeStream = Readable.fromWeb(
+            response.body as Parameters<typeof Readable.fromWeb>[0],
+          );
+          await pipeline(nodeStream, createWriteStream(outputPath));
+          if (existsSync(outputPath)) return outputPath;
+        }
+      } catch {
+        // Download failed
+      }
+    }
+
+    return null;
+  }
+
+  private async fetchVideoUrl(videoId: string): Promise<string | null> {
+    // Loom exposes video URLs through their fetch endpoint
+    try {
+      const response = await fetch(
+        `https://www.loom.com/api/campaigns/sessions/${videoId}/transcoded-url`,
+        {
+          method: 'POST',
+          headers: GRAPHQL_HEADERS,
+          body: JSON.stringify({}),
+        },
+      );
+
+      if (response.ok) {
+        const data = (await response.json()) as { url?: string };
+        if (data.url) return data.url;
+      }
+    } catch {
+      // Try alternative approach
+    }
+
+    // Fallback: query the GraphQL API for video source URL
+    const data = await loomGraphQL<{ getVideo: { source_url?: string; video_url?: string } }>(
+      `query GetVideoUrl($videoId: ID!, $password: String) {
+        getVideo(id: $videoId, password: $password) {
+          ... on RegularUserVideo {
+            source_url
+          }
+        }
+      }`,
+      { videoId, password: null },
+    );
+
+    return data?.getVideo?.source_url ?? null;
   }
 }
 
