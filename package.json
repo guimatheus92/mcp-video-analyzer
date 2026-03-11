@@ -1,6 +1,6 @@
 {
   "name": "mcp-video-analyzer",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "MCP server for video analysis — extracts transcripts, key frames, OCR text, and metadata from video URLs. Supports Loom and direct video files.",
   "author": "guimatheus92",
   "license": "MIT",
