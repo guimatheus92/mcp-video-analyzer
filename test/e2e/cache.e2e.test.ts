@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { AnalysisCache, cacheKey } from '../src/utils/cache.js';
-import { filterAnalysisResult } from '../src/utils/field-filter.js';
-import type { IAnalysisResult } from '../src/types.js';
+import { AnalysisCache, cacheKey } from '../../src/utils/cache.js';
+import { filterAnalysisResult } from '../../src/utils/field-filter.js';
+import type { IAnalysisResult } from '../../src/types.js';
 
 function createResult(title = 'Test'): IAnalysisResult {
   return {

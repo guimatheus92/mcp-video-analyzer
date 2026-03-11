@@ -37,13 +37,7 @@ function main(): void {
     console.log(`[verify] Checking binary exists...`);
 
     // Try to start the server (should not crash on import)
-    const entryPoint = join(
-      tempDir,
-      'node_modules',
-      'mcp-video-analyzer',
-      'dist',
-      'index.js',
-    );
+    const entryPoint = join(tempDir, 'node_modules', 'mcp-video-analyzer', 'dist', 'index.js');
     console.log(`[verify] Testing server startup...`);
 
     try {

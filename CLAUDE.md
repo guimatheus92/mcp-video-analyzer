@@ -28,7 +28,9 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 
 - TypeScript strict mode. No `any` unless explicitly necessary (use `// eslint-disable-next-line`).
 - All exports must be used — knip enforces zero unused exports.
-- Tests live next to source files: `foo.ts` → `foo.test.ts`.
+- Unit tests live next to source files: `foo.ts` → `foo.test.ts`.
+- Shared test infrastructure lives in `test/`: helpers (`test/helpers/`), fixtures (`test/fixtures/`), smoke tests (`test/smoke/`), e2e tests (`test/e2e/`).
+- Use `createTestImage()` from `test/helpers/images.ts` and `FIXTURES_DIR` from `test/helpers/fixtures.ts` — don't redefine in each test file.
 - Use `vitest` with `pool: 'forks'` (required on Windows).
 - Graceful degradation: never throw when partial results are available. Use `warnings[]` array.
 - Three-strategy video download: yt-dlp (primary) → direct HTTP via Loom CDN API (fallback) → headless Chrome screenshots (last resort).

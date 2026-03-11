@@ -4,32 +4,13 @@ import { join } from 'node:path';
 import sharp from 'sharp';
 import { optimizeFrame, optimizeFrames } from './image-optimizer.js';
 import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
-
-async function createTestImage(
-  dir: string,
-  name: string,
-  width: number,
-  height: number,
-): Promise<string> {
-  const outputPath = join(dir, name);
-  await sharp({
-    create: {
-      width,
-      height,
-      channels: 3,
-      background: { r: 255, g: 0, b: 0 },
-    },
-  })
-    .png()
-    .toFile(outputPath);
-  return outputPath;
-}
+import { createTestImage } from '../../test/helpers/index.js';
 
 describe('optimizeFrame', () => {
   it('resizes large image to max 800px width', async () => {
     const tempDir = await createTempDir();
     try {
-      const inputPath = await createTestImage(tempDir, 'large.png', 1600, 1200);
+      const inputPath = await createTestImage(tempDir, 'large.png', { width: 1600, height: 1200 });
       const outputPath = join(tempDir, 'optimized.jpg');
 
       await optimizeFrame(inputPath, outputPath);
@@ -45,7 +26,7 @@ describe('optimizeFrame', () => {
   it('does not enlarge small images', async () => {
     const tempDir = await createTempDir();
     try {
-      const inputPath = await createTestImage(tempDir, 'small.png', 400, 300);
+      const inputPath = await createTestImage(tempDir, 'small.png', { width: 400, height: 300 });
       const outputPath = join(tempDir, 'optimized.jpg');
 
       await optimizeFrame(inputPath, outputPath);
@@ -60,7 +41,7 @@ describe('optimizeFrame', () => {
   it('produces smaller file than input', async () => {
     const tempDir = await createTempDir();
     try {
-      const inputPath = await createTestImage(tempDir, 'big.png', 1600, 1200);
+      const inputPath = await createTestImage(tempDir, 'big.png', { width: 1600, height: 1200 });
       const outputPath = join(tempDir, 'compressed.jpg');
 
       await optimizeFrame(inputPath, outputPath);
@@ -79,9 +60,9 @@ describe('optimizeFrames', () => {
     const tempDir = await createTempDir();
     try {
       const inputs = await Promise.all([
-        createTestImage(tempDir, 'frame1.png', 1000, 800),
-        createTestImage(tempDir, 'frame2.png', 1000, 800),
-        createTestImage(tempDir, 'frame3.png', 1000, 800),
+        createTestImage(tempDir, 'frame1.png', { width: 1000, height: 800 }),
+        createTestImage(tempDir, 'frame2.png', { width: 1000, height: 800 }),
+        createTestImage(tempDir, 'frame3.png', { width: 1000, height: 800 }),
       ]);
 
       const results = await optimizeFrames(inputs, tempDir);

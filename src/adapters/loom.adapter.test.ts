@@ -14,8 +14,7 @@ vi.mock('node:child_process', () => ({
 }));
 
 import { LoomAdapter } from './loom.adapter.js';
-
-const FIXTURES_DIR = join(import.meta.dirname, '../../test/fixtures');
+import { FIXTURES_DIR } from '../../test/helpers/index.js';
 
 const metadataFixture = JSON.parse(
   readFileSync(join(FIXTURES_DIR, 'loom-graphql-metadata.json'), 'utf-8'),

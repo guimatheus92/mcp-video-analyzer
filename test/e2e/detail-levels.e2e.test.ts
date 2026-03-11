@@ -1,16 +1,20 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { registerAdapter, clearAdapters, getAdapter } from '../src/adapters/adapter.interface.js';
-import { DirectAdapter } from '../src/adapters/direct.adapter.js';
-import { LoomAdapter } from '../src/adapters/loom.adapter.js';
+import {
+  registerAdapter,
+  clearAdapters,
+  getAdapter,
+} from '../../src/adapters/adapter.interface.js';
+import { DirectAdapter } from '../../src/adapters/direct.adapter.js';
+import { LoomAdapter } from '../../src/adapters/loom.adapter.js';
 import {
   extractSceneFrames,
   extractDenseFrames,
   probeVideoDuration,
-} from '../src/processors/frame-extractor.js';
-import { getDetailConfig } from '../src/config/detail-levels.js';
-import { createTempDir, cleanupTempDir } from '../src/utils/temp-files.js';
+} from '../../src/processors/frame-extractor.js';
+import { getDetailConfig } from '../../src/config/detail-levels.js';
+import { createTempDir, cleanupTempDir } from '../../src/utils/temp-files.js';
 import { TEST_DIRECT_VIDEO_URL as TEST_VIDEO_URL } from './fixtures.js';
 
 describe('E2E: Detail levels with direct video', () => {

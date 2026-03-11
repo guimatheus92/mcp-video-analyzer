@@ -6,6 +6,7 @@ export default defineConfig({
     pool: 'forks',
     passWithNoTests: true,
     include: ['src/**/*.test.ts', 'src/**/*.integration.test.ts'],
+    exclude: ['test/smoke/**', 'test/e2e/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

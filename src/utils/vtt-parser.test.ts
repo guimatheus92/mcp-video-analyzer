@@ -2,8 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseVtt } from './vtt-parser.js';
-
-const FIXTURES_DIR = join(import.meta.dirname, '../../test/fixtures');
+import { FIXTURES_DIR } from '../../test/helpers/index.js';
 
 describe('parseVtt', () => {
   it('parses the sample.vtt fixture correctly', () => {

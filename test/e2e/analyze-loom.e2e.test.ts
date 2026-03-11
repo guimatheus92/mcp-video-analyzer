@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { registerAdapter, clearAdapters, getAdapter } from '../src/adapters/adapter.interface.js';
-import { LoomAdapter } from '../src/adapters/loom.adapter.js';
+import {
+  registerAdapter,
+  clearAdapters,
+  getAdapter,
+} from '../../src/adapters/adapter.interface.js';
+import { LoomAdapter } from '../../src/adapters/loom.adapter.js';
 import { TEST_LOOM_URL } from './fixtures.js';
 
 describe('E2E: Loom video analysis', () => {

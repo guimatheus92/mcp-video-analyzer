@@ -1,5 +1,5 @@
 {
-  "project": ["src/**/*.ts"],
+  "project": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts"],
   "ignoreDependencies": ["cheerio"],
   "rules": {
     "unlisted": "error",

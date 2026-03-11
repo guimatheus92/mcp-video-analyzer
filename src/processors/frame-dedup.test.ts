@@ -10,27 +10,14 @@ import {
   isBlackFrame,
   filterBlackFrames,
 } from './frame-dedup.js';
+import { createTestImage } from '../../test/helpers/index.js';
 import type { IFrameResult } from '../types.js';
-
-async function createTestImage(
-  dir: string,
-  name: string,
-  color: { r: number; g: number; b: number },
-): Promise<string> {
-  const path = join(dir, name);
-  await sharp({
-    create: { width: 100, height: 100, channels: 3, background: color },
-  })
-    .jpeg()
-    .toFile(path);
-  return path;
-}
 
 describe('frame-dedup', () => {
   describe('computeDHash', () => {
     it('returns a buffer for a valid image', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'dedup-test-'));
-      const path = await createTestImage(dir, 'test.jpg', { r: 128, g: 128, b: 128 });
+      const path = await createTestImage(dir, 'test.jpg', { color: { r: 128, g: 128, b: 128 } });
 
       const hash = await computeDHash(path);
       expect(hash).toBeInstanceOf(Buffer);
@@ -39,8 +26,8 @@ describe('frame-dedup', () => {
 
     it('returns identical hashes for identical images', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'dedup-test-'));
-      const path1 = await createTestImage(dir, 'a.jpg', { r: 200, g: 100, b: 50 });
-      const path2 = await createTestImage(dir, 'b.jpg', { r: 200, g: 100, b: 50 });
+      const path1 = await createTestImage(dir, 'a.jpg', { color: { r: 200, g: 100, b: 50 } });
+      const path2 = await createTestImage(dir, 'b.jpg', { color: { r: 200, g: 100, b: 50 } });
 
       const hash1 = await computeDHash(path1);
       const hash2 = await computeDHash(path2);
@@ -122,9 +109,9 @@ describe('frame-dedup', () => {
 
     it('removes duplicate solid-color frames', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'dedup-test-'));
-      const path1 = await createTestImage(dir, 'f1.jpg', { r: 100, g: 100, b: 100 });
-      const path2 = await createTestImage(dir, 'f2.jpg', { r: 100, g: 100, b: 100 });
-      const path3 = await createTestImage(dir, 'f3.jpg', { r: 100, g: 100, b: 100 });
+      const path1 = await createTestImage(dir, 'f1.jpg', { color: { r: 100, g: 100, b: 100 } });
+      const path2 = await createTestImage(dir, 'f2.jpg', { color: { r: 100, g: 100, b: 100 } });
+      const path3 = await createTestImage(dir, 'f3.jpg', { color: { r: 100, g: 100, b: 100 } });
 
       const frames: IFrameResult[] = [
         { time: '0:01', filePath: path1, mimeType: 'image/jpeg' },
@@ -140,19 +127,19 @@ describe('frame-dedup', () => {
   describe('isBlackFrame', () => {
     it('detects a fully black frame', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'black-test-'));
-      const path = await createTestImage(dir, 'black.jpg', { r: 0, g: 0, b: 0 });
+      const path = await createTestImage(dir, 'black.jpg', { color: { r: 0, g: 0, b: 0 } });
       expect(await isBlackFrame(path)).toBe(true);
     });
 
     it('detects a nearly black frame', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'black-test-'));
-      const path = await createTestImage(dir, 'dark.jpg', { r: 5, g: 5, b: 5 });
+      const path = await createTestImage(dir, 'dark.jpg', { color: { r: 5, g: 5, b: 5 } });
       expect(await isBlackFrame(path)).toBe(true);
     });
 
     it('does not flag a bright frame', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'black-test-'));
-      const path = await createTestImage(dir, 'bright.jpg', { r: 200, g: 200, b: 200 });
+      const path = await createTestImage(dir, 'bright.jpg', { color: { r: 200, g: 200, b: 200 } });
       expect(await isBlackFrame(path)).toBe(false);
     });
 
@@ -164,8 +151,10 @@ describe('frame-dedup', () => {
   describe('filterBlackFrames', () => {
     it('removes black frames from array', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'black-filter-'));
-      const blackPath = await createTestImage(dir, 'black.jpg', { r: 0, g: 0, b: 0 });
-      const brightPath = await createTestImage(dir, 'bright.jpg', { r: 200, g: 100, b: 50 });
+      const blackPath = await createTestImage(dir, 'black.jpg', { color: { r: 0, g: 0, b: 0 } });
+      const brightPath = await createTestImage(dir, 'bright.jpg', {
+        color: { r: 200, g: 100, b: 50 },
+      });
 
       const frames: IFrameResult[] = [
         { time: '0:01', filePath: blackPath, mimeType: 'image/jpeg' },
@@ -181,7 +170,7 @@ describe('frame-dedup', () => {
 
     it('returns empty result for all-black frames', async () => {
       const dir = await mkdtemp(join(tmpdir(), 'black-filter-'));
-      const blackPath = await createTestImage(dir, 'black.jpg', { r: 0, g: 0, b: 0 });
+      const blackPath = await createTestImage(dir, 'black.jpg', { color: { r: 0, g: 0, b: 0 } });
 
       const frames: IFrameResult[] = [
         { time: '0:01', filePath: blackPath, mimeType: 'image/jpeg' },

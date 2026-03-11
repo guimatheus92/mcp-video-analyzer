@@ -11,8 +11,7 @@ import {
   extractDenseFrames,
 } from './frame-extractor.js';
 import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
-
-const FIXTURES_DIR = join(import.meta.dirname, '../../test/fixtures');
+import { FIXTURES_DIR } from '../../test/helpers/index.js';
 
 describe('parseTimestamp', () => {
   it('parses "1:23" to 83 seconds', () => {
