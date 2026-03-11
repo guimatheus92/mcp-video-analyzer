@@ -13,7 +13,7 @@ import { registerAnalyzeMoment } from './tools/analyze-moment.js';
 export function createServer(): FastMCP {
   const server = new FastMCP({
     name: 'mcp-video-analyzer',
-    version: '0.2.0',
+    version: '0.2.2',
     instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs.
 
 AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:

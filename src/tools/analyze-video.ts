@@ -9,7 +9,7 @@ import {
   formatTimestamp,
 } from '../processors/frame-extractor.js';
 import { extractBrowserFrames, generateTimestamps } from '../processors/browser-frame-extractor.js';
-import { deduplicateFrames } from '../processors/frame-dedup.js';
+import { deduplicateFrames, filterBlackFrames } from '../processors/frame-dedup.js';
 import { extractTextFromFrames } from '../processors/frame-ocr.js';
 import { buildAnnotatedTimeline } from '../processors/annotated-timeline.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
@@ -311,7 +311,20 @@ Use options.forceRefresh to bypass the cache.`,
             );
           }
 
-          // Post-processing: dedup, OCR, timeline
+          // Post-processing: filter black frames, dedup, OCR, timeline
+          if (result.frames.length > 0) {
+            const blackResult = await filterBlackFrames(result.frames).catch(() => ({
+              frames: result.frames,
+              removedCount: 0,
+            }));
+            if (blackResult.removedCount > 0) {
+              warnings.push(
+                `Removed ${blackResult.removedCount} black/blank frame(s) — video may be DRM-protected`,
+              );
+            }
+            result.frames = blackResult.frames;
+          }
+
           if (result.frames.length > 0) {
             const beforeDedup = result.frames.length;
             result.frames = await deduplicateFrames(result.frames).catch((e: unknown) => {
