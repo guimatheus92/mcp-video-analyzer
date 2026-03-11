@@ -1,7 +1,7 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
-import { join } from 'node:path';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
+import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
 import { formatTimestamp } from './frame-extractor.js';
 

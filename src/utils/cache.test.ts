@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { AnalysisCache, cacheKey } from './cache.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IAnalysisResult } from '../types.js';
+import { AnalysisCache, cacheKey } from './cache.js';
 
 function createMockResult(title = 'Test Video'): IAnalysisResult {
   return {

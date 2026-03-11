@@ -1,25 +1,25 @@
 import type { FastMCP } from 'fastmcp';
-import { imageContent, UserError } from 'fastmcp';
+import { UserError, imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
-import {
-  extractSceneFrames,
-  extractDenseFrames,
-  probeVideoDuration,
-  formatTimestamp,
-} from '../processors/frame-extractor.js';
+import { getDetailConfig } from '../config/detail-levels.js';
+import { buildAnnotatedTimeline } from '../processors/annotated-timeline.js';
+import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcriber.js';
 import { extractBrowserFrames, generateTimestamps } from '../processors/browser-frame-extractor.js';
 import { deduplicateFrames, filterBlackFrames } from '../processors/frame-dedup.js';
+import {
+  extractDenseFrames,
+  extractSceneFrames,
+  formatTimestamp,
+  probeVideoDuration,
+} from '../processors/frame-extractor.js';
 import { extractTextFromFrames } from '../processors/frame-ocr.js';
-import { buildAnnotatedTimeline } from '../processors/annotated-timeline.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
-import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcriber.js';
-import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
+import type { IAnalysisResult } from '../types.js';
 import { AnalysisCache, cacheKey } from '../utils/cache.js';
-import { getDetailConfig } from '../config/detail-levels.js';
 import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
-import type { IAnalysisResult } from '../types.js';
+import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 
 const cache = new AnalysisCache();
 

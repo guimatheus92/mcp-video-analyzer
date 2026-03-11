@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { registerAdapter, getAdapter, clearAdapters } from './adapter.interface.js';
-import { LoomAdapter } from './loom.adapter.js';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { clearAdapters, getAdapter, registerAdapter } from './adapter.interface.js';
 import { DirectAdapter } from './direct.adapter.js';
+import { LoomAdapter } from './loom.adapter.js';
 
 beforeEach(() => {
   clearAdapters();

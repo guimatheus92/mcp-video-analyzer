@@ -1,9 +1,9 @@
 import type { FastMCP } from 'fastmcp';
-import { imageContent, UserError } from 'fastmcp';
+import { UserError, imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
-import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
+import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createTempDir } from '../utils/temp-files.js';
 

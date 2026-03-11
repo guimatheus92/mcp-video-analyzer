@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FastMCP } from 'fastmcp';
-import { registerGetFrameBurst } from './get-frame-burst.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearAdapters } from '../adapters/adapter.interface.js';
+import { registerGetFrameBurst } from './get-frame-burst.js';
 
 describe('get_frame_burst tool', () => {
   let server: FastMCP;

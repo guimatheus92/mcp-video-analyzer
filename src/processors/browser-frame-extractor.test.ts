@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { generateTimestamps } from './browser-frame-extractor.js';
 
 describe('browser-frame-extractor', () => {

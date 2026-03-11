@@ -1,6 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FIXTURES_DIR } from '../../test/helpers/index.js';
+import { LoomAdapter } from './loom.adapter.js';
 
 // Mock child_process so findYtDlp resolves instantly (no real exec calls)
 vi.mock('node:child_process', () => ({
@@ -12,9 +14,6 @@ vi.mock('node:child_process', () => ({
     }
   },
 }));
-
-import { LoomAdapter } from './loom.adapter.js';
-import { FIXTURES_DIR } from '../../test/helpers/index.js';
 
 const metadataFixture = JSON.parse(
   readFileSync(join(FIXTURES_DIR, 'loom-graphql-metadata.json'), 'utf-8'),

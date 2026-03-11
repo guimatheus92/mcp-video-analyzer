@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { detectPlatform, extractLoomId } from './url-detector.js';
 
 describe('detectPlatform', () => {

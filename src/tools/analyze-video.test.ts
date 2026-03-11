@@ -1,9 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { FastMCP } from 'fastmcp';
-import { registerAnalyzeVideo } from './analyze-video.js';
-import { registerAdapter, clearAdapters } from '../adapters/adapter.interface.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import type { IVideoAdapter } from '../adapters/adapter.interface.js';
 import type { IAdapterCapabilities } from '../types.js';
+import { registerAnalyzeVideo } from './analyze-video.js';
 
 function createMockAdapter(overrides: Partial<IVideoAdapter> = {}): IVideoAdapter {
   const capabilities: IAdapterCapabilities = {

@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseVtt } from './vtt-parser.js';
+import { describe, expect, it } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
+import { parseVtt } from './vtt-parser.js';
 
 describe('parseVtt', () => {
   it('parses the sample.vtt fixture correctly', () => {

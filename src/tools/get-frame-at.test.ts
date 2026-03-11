@@ -1,7 +1,7 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { FastMCP } from 'fastmcp';
-import { registerGetFrameAt } from './get-frame-at.js';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { clearAdapters } from '../adapters/adapter.interface.js';
+import { registerGetFrameAt } from './get-frame-at.js';
 
 describe('get_frame_at tool', () => {
   let server: FastMCP;

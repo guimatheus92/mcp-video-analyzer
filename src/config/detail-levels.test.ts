@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { getDetailConfig, DETAIL_CONFIGS } from './detail-levels.js';
+import { describe, expect, it } from 'vitest';
+import { DETAIL_CONFIGS, getDetailConfig } from './detail-levels.js';
 import type { DetailLevel } from './detail-levels.js';
 
 describe('detail-levels', () => {

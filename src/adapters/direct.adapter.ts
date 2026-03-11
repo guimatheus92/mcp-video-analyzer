@@ -1,16 +1,16 @@
 import { createWriteStream } from 'node:fs';
 import { join } from 'node:path';
-import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import type {
-  ITranscriptEntry,
-  IVideoMetadata,
-  IVideoComment,
-  IChapter,
   IAdapterCapabilities,
+  IChapter,
+  ITranscriptEntry,
+  IVideoComment,
+  IVideoMetadata,
 } from '../types.js';
-import type { IVideoAdapter } from './adapter.interface.js';
 import { detectPlatform } from '../utils/url-detector.js';
+import type { IVideoAdapter } from './adapter.interface.js';
 
 function getFilenameFromUrl(url: string): string {
   try {

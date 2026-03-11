@@ -1,4 +1,4 @@
-import type { ITranscriptEntry, IFrameResult } from '../types.js';
+import type { IFrameResult, ITranscriptEntry } from '../types.js';
 import type { IOcrResult } from './frame-ocr.js';
 
 interface ITimelineEntry {

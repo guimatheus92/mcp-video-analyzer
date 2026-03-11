@@ -1,11 +1,11 @@
-import type {
-  ITranscriptEntry,
-  IVideoMetadata,
-  IVideoComment,
-  IChapter,
-  IAdapterCapabilities,
-} from '../types.js';
 import { UserError } from 'fastmcp';
+import type {
+  IAdapterCapabilities,
+  IChapter,
+  ITranscriptEntry,
+  IVideoComment,
+  IVideoMetadata,
+} from '../types.js';
 
 export interface IVideoAdapter {
   readonly name: string;

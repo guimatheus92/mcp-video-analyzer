@@ -1,7 +1,7 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
 import { existsSync, readFileSync } from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { DirectAdapter } from './direct.adapter.js';
-import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
 
 describe('DirectAdapter', () => {
   const adapter = new DirectAdapter();

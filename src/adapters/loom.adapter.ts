@@ -1,19 +1,19 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { promisify } from 'node:util';
+import { createWriteStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { existsSync, createWriteStream } from 'node:fs';
-import { pipeline } from 'node:stream/promises';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { promisify } from 'node:util';
 import type {
-  ITranscriptEntry,
-  IVideoMetadata,
-  IVideoComment,
-  IChapter,
   IAdapterCapabilities,
+  IChapter,
+  ITranscriptEntry,
+  IVideoComment,
+  IVideoMetadata,
 } from '../types.js';
-import type { IVideoAdapter } from './adapter.interface.js';
 import { detectPlatform, extractLoomId } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
+import type { IVideoAdapter } from './adapter.interface.js';
 
 const execFile = promisify(execFileCb);
 

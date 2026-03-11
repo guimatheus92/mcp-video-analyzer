@@ -5,11 +5,10 @@
  *
  * Usage: npx tsx scripts/verify-package.ts
  */
-
 import { execSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const rootDir = join(import.meta.dirname, '..');
 
@@ -33,7 +32,6 @@ function main(): void {
     run(`npm install "${tarball.replace(/\\/g, '/')}"`, tempDir);
 
     // Verify the binary exists
-    const binPath = join(tempDir, 'node_modules', '.bin', 'mcp-video-analyzer');
     console.log(`[verify] Checking binary exists...`);
 
     // Try to start the server (should not crash on import)

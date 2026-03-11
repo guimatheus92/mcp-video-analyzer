@@ -1,15 +1,15 @@
 import type { FastMCP } from 'fastmcp';
-import { imageContent, UserError } from 'fastmcp';
+import { UserError, imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
-import {
-  extractSceneFrames,
-  extractDenseFrames,
-  probeVideoDuration,
-  formatTimestamp,
-} from '../processors/frame-extractor.js';
 import { extractBrowserFrames, generateTimestamps } from '../processors/browser-frame-extractor.js';
 import { deduplicateFrames, filterBlackFrames } from '../processors/frame-dedup.js';
+import {
+  extractDenseFrames,
+  extractSceneFrames,
+  formatTimestamp,
+  probeVideoDuration,
+} from '../processors/frame-extractor.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createTempDir } from '../utils/temp-files.js';
 

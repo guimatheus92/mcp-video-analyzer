@@ -1,8 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { join } from 'node:path';
-import { extractAudioTrack, transcribeAudio } from './audio-transcriber.js';
-import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
+import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
+import { extractAudioTrack, transcribeAudio } from './audio-transcriber.js';
 
 describe('extractAudioTrack', () => {
   it('throws for video without audio stream (tiny.mp4 has no audio)', async () => {

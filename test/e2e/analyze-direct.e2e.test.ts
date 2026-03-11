@@ -1,16 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  registerAdapter,
   clearAdapters,
   getAdapter,
+  registerAdapter,
 } from '../../src/adapters/adapter.interface.js';
 import { DirectAdapter } from '../../src/adapters/direct.adapter.js';
 import { extractFrameAt, probeVideoDuration } from '../../src/processors/frame-extractor.js';
 import { optimizeFrame } from '../../src/processors/image-optimizer.js';
-import { createTempDir, cleanupTempDir } from '../../src/utils/temp-files.js';
-
+import { cleanupTempDir, createTempDir } from '../../src/utils/temp-files.js';
 import { TEST_DIRECT_VIDEO_URL as TEST_VIDEO_URL } from './fixtures.js';
 
 describe('E2E: Direct video analysis', () => {
@@ -37,6 +36,7 @@ describe('E2E: Direct video analysis', () => {
     const videoPath = await adapter.downloadVideo(TEST_VIDEO_URL, tempDir);
 
     expect(videoPath).not.toBeNull();
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     expect(existsSync(videoPath!)).toBe(true);
   });
 

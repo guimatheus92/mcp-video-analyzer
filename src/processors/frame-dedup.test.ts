@@ -1,17 +1,17 @@
-import { describe, it, expect } from 'vitest';
-import { join } from 'node:path';
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import sharp from 'sharp';
-import {
-  computeDHash,
-  hammingDistance,
-  deduplicateFrames,
-  isBlackFrame,
-  filterBlackFrames,
-} from './frame-dedup.js';
+import { describe, expect, it } from 'vitest';
 import { createTestImage } from '../../test/helpers/index.js';
 import type { IFrameResult } from '../types.js';
+import {
+  computeDHash,
+  deduplicateFrames,
+  filterBlackFrames,
+  hammingDistance,
+  isBlackFrame,
+} from './frame-dedup.js';
 
 describe('frame-dedup', () => {
   describe('computeDHash', () => {

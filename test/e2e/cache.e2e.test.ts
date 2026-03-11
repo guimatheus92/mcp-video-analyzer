@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { IAnalysisResult } from '../../src/types.js';
 import { AnalysisCache, cacheKey } from '../../src/utils/cache.js';
 import { filterAnalysisResult } from '../../src/utils/field-filter.js';
-import type { IAnalysisResult } from '../../src/types.js';
 
 function createResult(title = 'Test'): IAnalysisResult {
   return {
@@ -71,6 +71,7 @@ describe('E2E: Cache integration', () => {
     result.warnings.push('test warning');
 
     cache.set(key, result);
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const cached = cache.get(key)!;
 
     const filtered = filterAnalysisResult(cached, ['metadata']);

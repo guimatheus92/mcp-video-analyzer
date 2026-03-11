@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { IFrameResult, ITranscriptEntry } from '../types.js';
 import { buildAnnotatedTimeline, parseTimeToSeconds } from './annotated-timeline.js';
-import type { ITranscriptEntry, IFrameResult } from '../types.js';
 import type { IOcrResult } from './frame-ocr.js';
 
 describe('annotated-timeline', () => {

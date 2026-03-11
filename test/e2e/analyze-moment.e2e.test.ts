@@ -1,16 +1,16 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync } from 'node:fs';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  registerAdapter,
   clearAdapters,
   getAdapter,
+  registerAdapter,
 } from '../../src/adapters/adapter.interface.js';
 import { DirectAdapter } from '../../src/adapters/direct.adapter.js';
 import { LoomAdapter } from '../../src/adapters/loom.adapter.js';
+import { deduplicateFrames } from '../../src/processors/frame-dedup.js';
 import { extractFrameBurst, parseTimestamp } from '../../src/processors/frame-extractor.js';
 import { optimizeFrames } from '../../src/processors/image-optimizer.js';
-import { deduplicateFrames } from '../../src/processors/frame-dedup.js';
-import { createTempDir, cleanupTempDir } from '../../src/utils/temp-files.js';
+import { cleanupTempDir, createTempDir } from '../../src/utils/temp-files.js';
 import { TEST_DIRECT_VIDEO_URL as TEST_VIDEO_URL } from './fixtures.js';
 
 describe('E2E: analyze_moment with direct video', () => {

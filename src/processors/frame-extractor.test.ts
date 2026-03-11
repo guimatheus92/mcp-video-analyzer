@@ -1,17 +1,17 @@
-import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { FIXTURES_DIR } from '../../test/helpers/index.js';
+import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import {
-  parseTimestamp,
+  extractDenseFrames,
+  extractFrameAt,
   formatTimestamp,
   parseSceneTimestamps,
+  parseTimestamp,
   probeVideoDuration,
-  extractFrameAt,
-  extractDenseFrames,
 } from './frame-extractor.js';
-import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
-import { FIXTURES_DIR } from '../../test/helpers/index.js';
 
 describe('parseTimestamp', () => {
   it('parses "1:23" to 83 seconds', () => {

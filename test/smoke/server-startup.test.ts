@@ -1,7 +1,7 @@
-import { describe, it, expect, afterEach } from 'vitest';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { type ChildProcess, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { afterEach, describe, expect, it } from 'vitest';
 
 const TIMEOUT_MS = 15000;
 const testDir = fileURLToPath(new URL('.', import.meta.url));
@@ -28,10 +28,12 @@ describe('MCP server smoke test', () => {
       let stdout = '';
       let stderr = '';
 
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       proc.stdout!.on('data', (chunk: Buffer) => {
         stdout += chunk.toString();
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       proc.stderr!.on('data', (chunk: Buffer) => {
         stderr += chunk.toString();
       });
@@ -54,6 +56,7 @@ describe('MCP server smoke test', () => {
         },
       });
 
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       proc.stdin!.write(initRequest + '\n');
 
       // Wait for response
@@ -77,6 +80,7 @@ describe('MCP server smoke test', () => {
       const jsonMatch = response.match(/\{[^]*"result"[^]*\}/);
       expect(jsonMatch, 'No JSON-RPC result found in output').not.toBeNull();
 
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const parsed = JSON.parse(jsonMatch![0]);
       expect(parsed.result?.serverInfo?.name).toBe('mcp-video-analyzer');
       expect(parsed.result?.capabilities).toBeDefined();

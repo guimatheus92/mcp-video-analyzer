@@ -1,14 +1,14 @@
 import { FastMCP } from 'fastmcp';
 import { registerAdapter } from './adapters/adapter.interface.js';
-import { LoomAdapter } from './adapters/loom.adapter.js';
 import { DirectAdapter } from './adapters/direct.adapter.js';
+import { LoomAdapter } from './adapters/loom.adapter.js';
+import { registerAnalyzeMoment } from './tools/analyze-moment.js';
 import { registerAnalyzeVideo } from './tools/analyze-video.js';
 import { registerGetFrameAt } from './tools/get-frame-at.js';
 import { registerGetFrameBurst } from './tools/get-frame-burst.js';
-import { registerGetTranscript } from './tools/get-transcript.js';
-import { registerGetMetadata } from './tools/get-metadata.js';
 import { registerGetFrames } from './tools/get-frames.js';
-import { registerAnalyzeMoment } from './tools/analyze-moment.js';
+import { registerGetMetadata } from './tools/get-metadata.js';
+import { registerGetTranscript } from './tools/get-transcript.js';
 
 export function createServer(): FastMCP {
   const server = new FastMCP({

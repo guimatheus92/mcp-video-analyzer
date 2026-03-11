@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { clearAdapters } from './adapters/adapter.interface.js';
 import { createServer } from './server.js';
 

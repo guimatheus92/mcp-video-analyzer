@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
-import { filterAnalysisResult } from './field-filter.js';
+import { describe, expect, it } from 'vitest';
 import type { IAnalysisResult } from '../types.js';
+import { filterAnalysisResult } from './field-filter.js';
 
 function createFullResult(): IAnalysisResult {
   return {

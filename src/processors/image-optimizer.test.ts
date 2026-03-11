@@ -1,10 +1,10 @@
-import { describe, it, expect } from 'vitest';
-import { statSync, existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import sharp from 'sharp';
-import { optimizeFrame, optimizeFrames } from './image-optimizer.js';
-import { createTempDir, cleanupTempDir } from '../utils/temp-files.js';
+import { describe, expect, it } from 'vitest';
 import { createTestImage } from '../../test/helpers/index.js';
+import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
+import { optimizeFrame, optimizeFrames } from './image-optimizer.js';
 
 describe('optimizeFrame', () => {
   it('resizes large image to max 800px width', async () => {

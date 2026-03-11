@@ -1,12 +1,12 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
-  registerAdapter,
   clearAdapters,
   getAdapter,
+  registerAdapter,
 } from '../../src/adapters/adapter.interface.js';
 import { DirectAdapter } from '../../src/adapters/direct.adapter.js';
 import { LoomAdapter } from '../../src/adapters/loom.adapter.js';
-import { TEST_LOOM_URL, TEST_DIRECT_VIDEO_URL } from './fixtures.js';
+import { TEST_DIRECT_VIDEO_URL, TEST_LOOM_URL } from './fixtures.js';
 
 describe('E2E: get_transcript with direct video', () => {
   beforeAll(() => {

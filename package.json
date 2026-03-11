@@ -26,8 +26,8 @@
     "prepare": "npm run build",
     "dev": "npx fastmcp dev src/index.ts",
     "inspect": "npx fastmcp inspect src/index.ts",
-    "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix",
+    "lint": "eslint src/ test/ scripts/",
+    "lint:fix": "eslint src/ test/ scripts/ --fix",
     "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"*.config.*\" \"*.json\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"test/**/*.ts\" \"scripts/**/*.ts\" \"*.config.*\"",
     "typecheck": "tsc --noEmit",
@@ -68,6 +68,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/node": "^25.4.0",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^10.0.3",
