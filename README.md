@@ -4,7 +4,7 @@
   <img width="380" height="200" src="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer/badge" alt="mcp-video-analyzer MCP server" />
 </a>
 
-Featured in [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers).
+Featured in [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process).
 
 MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs. Supports Loom, direct video files (.mp4, .webm), and more.
 
