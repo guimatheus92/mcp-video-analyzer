@@ -12,11 +12,14 @@ export interface IOcrResult {
  *
  * Only includes results with meaningful text (confidence > 50%, text length > 3).
  */
-export async function extractTextFromFrames(frames: IFrameResult[]): Promise<IOcrResult[]> {
+export async function extractTextFromFrames(
+  frames: IFrameResult[],
+  language = 'eng+por',
+): Promise<IOcrResult[]> {
   const Tesseract = await loadTesseract();
   if (!Tesseract) return [];
 
-  const worker = await Tesseract.createWorker('eng');
+  const worker = await Tesseract.createWorker(language);
 
   try {
     const results: IOcrResult[] = [];
