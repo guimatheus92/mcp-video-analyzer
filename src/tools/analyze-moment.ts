@@ -20,6 +20,12 @@ const AnalyzeMomentSchema = z.object({
     .default(10)
     .optional()
     .describe('Number of frames to extract in the range (default: 10)'),
+  ocrLanguage: z
+    .string()
+    .optional()
+    .describe(
+      'Tesseract OCR language codes (default: "eng+por"). Use "+" to combine: "eng+spa", "eng+fra+deu".',
+    ),
 });
 
 export function registerAnalyzeMoment(server: FastMCP): void {
@@ -50,6 +56,7 @@ Requires video download capability for frame extraction.`,
     execute: async (args, { reportProgress }) => {
       const { url, from, to } = args;
       const count = args.count ?? 10;
+      const ocrLanguage = args.ocrLanguage ?? 'eng+por';
 
       // Validate timestamps
       const fromSeconds = parseTimestamp(from);
@@ -131,7 +138,7 @@ Requires video download capability for frame extraction.`,
       await reportProgress({ progress: 75, total: 100 });
 
       // OCR
-      const ocrResults = await extractTextFromFrames(frames).catch((e: unknown) => {
+      const ocrResults = await extractTextFromFrames(frames, ocrLanguage).catch((e: unknown) => {
         warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
         return [];
       });

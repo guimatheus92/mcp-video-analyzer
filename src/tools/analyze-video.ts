@@ -79,6 +79,12 @@ const AnalyzeOptionsSchema = z
       .default(false)
       .optional()
       .describe('Bypass cache and re-analyze the video'),
+    ocrLanguage: z
+      .string()
+      .optional()
+      .describe(
+        'Tesseract OCR language codes (default: "eng+por"). Use "+" to combine: "eng+spa", "eng+fra+deu". See Tesseract docs for codes.',
+      ),
   })
   .optional();
 
@@ -123,6 +129,7 @@ Use options.forceRefresh to bypass the cache.`,
       const forceRefresh = options?.forceRefresh ?? false;
       const fields = options?.fields as AnalysisField[] | undefined;
       const threshold = options?.threshold ?? 0.1;
+      const ocrLanguage = options?.ocrLanguage ?? 'eng+por';
 
       // Resolve detail config
       const config = getDetailConfig(detail);
@@ -341,10 +348,12 @@ Use options.forceRefresh to bypass the cache.`,
 
             // OCR: extract text visible on screen
             if (config.includeOcr) {
-              result.ocrResults = await extractTextFromFrames(result.frames).catch((e: unknown) => {
-                warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
-                return [];
-              });
+              result.ocrResults = await extractTextFromFrames(result.frames, ocrLanguage).catch(
+                (e: unknown) => {
+                  warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
+                  return [];
+                },
+              );
             }
 
             await reportProgress({ progress: 95, total: 100 });
