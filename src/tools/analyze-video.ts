@@ -19,6 +19,7 @@ import type { IAnalysisResult } from '../types.js';
 import { AnalysisCache, cacheKey } from '../utils/cache.js';
 import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
+import { createProgressReporter } from '../utils/progress.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 
 const cache = new AnalysisCache();
@@ -124,6 +125,7 @@ Use options.forceRefresh to bypass the cache.`,
       openWorldHint: true,
     },
     execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url, options } = args;
       const detail = options?.detail ?? 'standard';
       const forceRefresh = options?.forceRefresh ?? false;
@@ -175,7 +177,7 @@ Use options.forceRefresh to bypass the cache.`,
       let tempDir: string | null = null;
 
       try {
-        await reportProgress({ progress: 0, total: 100 });
+        await progress(0, 'Starting video analysis...');
 
         // Fetch metadata, transcript, comments in parallel
         const [metadata, transcript, comments, chapters, aiSummary] = await Promise.all([
@@ -207,7 +209,7 @@ Use options.forceRefresh to bypass the cache.`,
           adapter.getAiSummary(url).catch(() => null),
         ]);
 
-        await reportProgress({ progress: 40, total: 100 });
+        await progress(35, 'Metadata and transcript fetched');
 
         // Apply transcript limit for brief mode
         const limitedTranscript =
@@ -239,7 +241,7 @@ Use options.forceRefresh to bypass the cache.`,
             videoPath = await adapter.downloadVideo(url, tempDir);
 
             if (videoPath) {
-              await reportProgress({ progress: 60, total: 100 });
+              await progress(50, 'Video downloaded, extracting frames...');
 
               // Probe duration if metadata didn't provide it
               if (metadata.duration === 0) {
@@ -268,7 +270,7 @@ Use options.forceRefresh to bypass the cache.`,
                     return [];
                   });
 
-              await reportProgress({ progress: 80, total: 100 });
+              await progress(70, `Extracted ${rawFrames.length} frames, optimizing...`);
 
               if (rawFrames.length > 0) {
                 const optimizedPaths = await optimizeFrames(
@@ -292,7 +294,7 @@ Use options.forceRefresh to bypass the cache.`,
 
           // Strategy 2: Browser-based extraction (fallback)
           if (!framesExtracted && metadata.duration > 0) {
-            await reportProgress({ progress: 60, total: 100 });
+            await progress(50, 'Extracting frames via browser fallback...');
 
             const timestamps = generateTimestamps(metadata.duration, maxFrames);
             const browserFrames = await extractBrowserFrames(url, tempDir, {
@@ -304,7 +306,7 @@ Use options.forceRefresh to bypass the cache.`,
               return [];
             });
 
-            await reportProgress({ progress: 80, total: 100 });
+            await progress(70, `Browser extracted ${browserFrames.length} frames`);
 
             if (browserFrames.length > 0) {
               result.frames = browserFrames;
@@ -344,23 +346,30 @@ Use options.forceRefresh to bypass the cache.`,
               );
             }
 
-            await reportProgress({ progress: 85, total: 100 });
+            await progress(80, 'Filtering and deduplicating frames...');
 
             // OCR: extract text visible on screen
             if (config.includeOcr) {
-              result.ocrResults = await extractTextFromFrames(result.frames, ocrLanguage).catch(
-                (e: unknown) => {
-                  warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
-                  return [];
+              await progress(85, `Running OCR on ${result.frames.length} frames...`);
+              result.ocrResults = await extractTextFromFrames(
+                result.frames,
+                ocrLanguage,
+                (completed, total) => {
+                  const pct = 85 + Math.round((completed / total) * 8);
+                  progress(pct, `OCR: processing frame ${completed}/${total}...`);
                 },
-              );
+              ).catch((e: unknown) => {
+                warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
+                return [];
+              });
             }
 
-            await reportProgress({ progress: 95, total: 100 });
+            await progress(93, 'OCR complete');
           }
 
           // Build annotated timeline
           if (config.includeTimeline) {
+            await progress(95, 'Building annotated timeline...');
             result.timeline = buildAnnotatedTimeline(
               result.transcript,
               result.frames,
@@ -391,7 +400,7 @@ Use options.forceRefresh to bypass the cache.`,
           }
         }
 
-        await reportProgress({ progress: 100, total: 100 });
+        await progress(100, 'Analysis complete');
 
         // Cache the full result
         cache.set(key, result);

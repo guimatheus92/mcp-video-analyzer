@@ -5,8 +5,8 @@ import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
 import { extractFrameAt, parseTimestamp } from '../processors/frame-extractor.js';
 import { optimizeFrame } from '../processors/image-optimizer.js';
-import { createTempDir } from '../utils/temp-files.js';
-import { getTempFilePath } from '../utils/temp-files.js';
+import { createProgressReporter } from '../utils/progress.js';
+import { createTempDir, getTempFilePath } from '../utils/temp-files.js';
 
 const GetFrameAtSchema = z.object({
   url: z.string().url().describe('Video URL (Loom share link or direct mp4/webm URL)'),
@@ -45,11 +45,12 @@ Returns: A single image of the video frame at the specified timestamp.`,
       openWorldHint: true,
     },
     execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url, timestamp } = args;
 
       const adapter = getAdapter(url);
 
-      await reportProgress({ progress: 0, total: 100 });
+      await progress(0, 'Starting frame extraction...');
 
       const tempDir = await createTempDir();
 
@@ -58,13 +59,13 @@ Returns: A single image of the video frame at the specified timestamp.`,
         const videoPath = await adapter.downloadVideo(url, tempDir);
 
         if (videoPath) {
-          await reportProgress({ progress: 50, total: 100 });
+          await progress(50, `Extracting frame at ${timestamp}...`);
 
           const frame = await extractFrameAt(videoPath, tempDir, timestamp);
           const optimizedPath = getTempFilePath(tempDir, `opt_frame_at.jpg`);
           await optimizeFrame(frame.filePath, optimizedPath);
 
-          await reportProgress({ progress: 100, total: 100 });
+          await progress(100, 'Frame extracted');
 
           return {
             content: [
@@ -76,14 +77,14 @@ Returns: A single image of the video frame at the specified timestamp.`,
       }
 
       // Strategy 2: Browser-based extraction (fallback)
-      await reportProgress({ progress: 30, total: 100 });
+      await progress(30, 'Extracting frame via browser fallback...');
       const seconds = parseTimestamp(timestamp);
       const browserFrames = await extractBrowserFrames(url, tempDir, {
         timestamps: [seconds],
       });
 
       if (browserFrames.length > 0) {
-        await reportProgress({ progress: 100, total: 100 });
+        await progress(100, 'Frame extracted');
         return {
           content: [
             {

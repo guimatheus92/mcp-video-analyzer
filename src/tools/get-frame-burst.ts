@@ -5,6 +5,7 @@ import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
 import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
+import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 
 const GetFrameBurstSchema = z.object({
@@ -56,12 +57,13 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       openWorldHint: true,
     },
     execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url, from, to, count } = args;
       const frameCount = count ?? 5;
 
       const adapter = getAdapter(url);
 
-      await reportProgress({ progress: 0, total: 100 });
+      await progress(0, `Starting burst extraction (${from} → ${to})...`);
 
       const tempDir = await createTempDir();
 
@@ -70,18 +72,18 @@ Returns: N images evenly distributed between the from and to timestamps.`,
         const videoPath = await adapter.downloadVideo(url, tempDir);
 
         if (videoPath) {
-          await reportProgress({ progress: 40, total: 100 });
+          await progress(40, 'Video downloaded, extracting burst frames...');
 
           const frames = await extractFrameBurst(videoPath, tempDir, from, to, frameCount);
 
-          await reportProgress({ progress: 70, total: 100 });
+          await progress(70, `Extracted ${frames.length} frames, optimizing...`);
 
           const optimizedPaths = await optimizeFrames(
             frames.map((f) => f.filePath),
             tempDir,
           );
 
-          await reportProgress({ progress: 100, total: 100 });
+          await progress(100, 'Burst extraction complete');
 
           const content: (
             | { type: 'text'; text: string }
@@ -102,7 +104,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       }
 
       // Strategy 2: Browser-based extraction (fallback)
-      await reportProgress({ progress: 30, total: 100 });
+      await progress(30, 'Extracting frames via browser fallback...');
       const fromSeconds = parseTimestamp(from);
       const toSeconds = parseTimestamp(to);
       const interval = (toSeconds - fromSeconds) / Math.max(frameCount - 1, 1);
@@ -113,7 +115,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps });
 
       if (browserFrames.length > 0) {
-        await reportProgress({ progress: 100, total: 100 });
+        await progress(100, 'Burst extraction complete');
 
         const content: (
           | { type: 'text'; text: string }

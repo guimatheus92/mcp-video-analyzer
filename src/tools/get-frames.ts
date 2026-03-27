@@ -11,6 +11,7 @@ import {
   probeVideoDuration,
 } from '../processors/frame-extractor.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
+import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 
 const GetFramesSchema = z.object({
@@ -61,6 +62,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       openWorldHint: true,
     },
     execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url, options } = args;
       const maxFrames = options?.maxFrames ?? 20;
       const threshold = options?.threshold ?? 0.1;
@@ -77,7 +79,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       const warnings: string[] = [];
       const tempDir = await createTempDir();
 
-      await reportProgress({ progress: 0, total: 100 });
+      await progress(0, 'Starting frame extraction...');
 
       // Get metadata for duration (needed for browser fallback)
       const metadata = await adapter.getMetadata(url).catch(() => ({
@@ -94,7 +96,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       if (adapter.capabilities.videoDownload) {
         const videoPath = await adapter.downloadVideo(url, tempDir);
         if (videoPath) {
-          await reportProgress({ progress: 50, total: 100 });
+          await progress(40, 'Video downloaded, extracting frames...');
 
           if (metadata.duration === 0) {
             const duration = await probeVideoDuration(videoPath).catch(() => 0);
@@ -134,7 +136,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
 
       // Strategy 2: Browser fallback
       if (frames.length === 0 && metadata.duration > 0) {
-        await reportProgress({ progress: 50, total: 100 });
+        await progress(40, 'Extracting frames via browser fallback...');
         const timestamps = generateTimestamps(metadata.duration, maxFrames);
         frames = await extractBrowserFrames(url, tempDir, { timestamps }).catch((e: unknown) => {
           warnings.push(`Browser extraction failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -143,6 +145,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       }
 
       // Filter black/blank frames
+      await progress(80, 'Filtering and deduplicating frames...');
       if (frames.length > 0) {
         const blackResult = await filterBlackFrames(frames).catch(() => ({
           frames,
@@ -165,7 +168,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
         }
       }
 
-      await reportProgress({ progress: 100, total: 100 });
+      await progress(100, 'Frames extracted');
 
       if (frames.length === 0) {
         throw new UserError(

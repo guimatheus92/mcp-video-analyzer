@@ -3,6 +3,7 @@ import { UserError } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcriber.js';
+import { createProgressReporter } from '../utils/progress.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 
 const GetTranscriptSchema = z.object({
@@ -29,7 +30,8 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       idempotentHint: true,
       openWorldHint: true,
     },
-    execute: async (args) => {
+    execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url } = args;
 
       let adapter;
@@ -42,6 +44,8 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
 
       const warnings: string[] = [];
 
+      await progress(0, 'Fetching transcript...');
+
       // Try native transcript first
       let transcript = await adapter.getTranscript(url).catch((e: unknown) => {
         warnings.push(
@@ -50,13 +54,17 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
         return [];
       });
 
+      await progress(40, 'Native transcript fetched');
+
       // Whisper fallback if no native transcript
       if (transcript.length === 0 && adapter.capabilities.videoDownload) {
         let tempDir: string | null = null;
         try {
+          await progress(45, 'No native transcript, downloading video for Whisper...');
           tempDir = await createTempDir();
           const videoPath = await adapter.downloadVideo(url, tempDir);
           if (videoPath) {
+            await progress(65, 'Transcribing audio with Whisper...');
             const audioPath = await extractAudioTrack(videoPath, tempDir);
             transcript = await transcribeAudio(audioPath);
             if (transcript.length > 0) {
@@ -75,6 +83,8 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       if (transcript.length === 0) {
         warnings.push('No transcript available for this video.');
       }
+
+      await progress(100, 'Transcript complete');
 
       return {
         content: [

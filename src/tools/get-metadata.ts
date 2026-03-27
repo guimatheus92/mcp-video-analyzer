@@ -2,6 +2,7 @@ import type { FastMCP } from 'fastmcp';
 import { UserError } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
+import { createProgressReporter } from '../utils/progress.js';
 
 const GetMetadataSchema = z.object({
   url: z.string().url().describe('Video URL (Loom share link or direct mp4/webm URL)'),
@@ -24,7 +25,8 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       idempotentHint: true,
       openWorldHint: true,
     },
-    execute: async (args) => {
+    execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url } = args;
 
       let adapter;
@@ -36,6 +38,8 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
       }
 
       const warnings: string[] = [];
+
+      await progress(0, 'Fetching video metadata...');
 
       const [metadata, comments, chapters, aiSummary] = await Promise.all([
         adapter.getMetadata(url).catch((e: unknown) => {
@@ -55,6 +59,8 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
         adapter.getChapters(url).catch(() => []),
         adapter.getAiSummary(url).catch(() => null),
       ]);
+
+      await progress(100, 'Metadata fetched');
 
       return {
         content: [

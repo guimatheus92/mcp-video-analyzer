@@ -7,6 +7,7 @@ import { deduplicateFrames } from '../processors/frame-dedup.js';
 import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor.js';
 import { extractTextFromFrames } from '../processors/frame-ocr.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
+import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 
 const AnalyzeMomentSchema = z.object({
@@ -54,6 +55,7 @@ Requires video download capability for frame extraction.`,
       openWorldHint: true,
     },
     execute: async (args, { reportProgress }) => {
+      const progress = createProgressReporter(reportProgress);
       const { url, from, to } = args;
       const count = args.count ?? 10;
       const ocrLanguage = args.ocrLanguage ?? 'eng+por';
@@ -79,7 +81,7 @@ Requires video download capability for frame extraction.`,
       const warnings: string[] = [];
       const tempDir = await createTempDir();
 
-      await reportProgress({ progress: 0, total: 100 });
+      await progress(0, `Starting moment analysis (${from} → ${to})...`);
 
       // Fetch transcript and filter to time range
       const fullTranscript = await adapter.getTranscript(url).catch((e: unknown) => {
@@ -92,7 +94,7 @@ Requires video download capability for frame extraction.`,
         return entrySeconds !== null && entrySeconds >= fromSeconds && entrySeconds <= toSeconds;
       });
 
-      await reportProgress({ progress: 20, total: 100 });
+      await progress(15, 'Transcript filtered to time range');
 
       // Download video and extract burst frames
       if (!adapter.capabilities.videoDownload) {
@@ -106,11 +108,11 @@ Requires video download capability for frame extraction.`,
         throw new UserError('Failed to download video for moment analysis.');
       }
 
-      await reportProgress({ progress: 40, total: 100 });
+      await progress(35, 'Video downloaded, extracting burst frames...');
 
       const rawFrames = await extractFrameBurst(videoPath, tempDir, from, to, count);
 
-      await reportProgress({ progress: 60, total: 100 });
+      await progress(55, `Extracted ${rawFrames.length} frames, optimizing...`);
 
       // Optimize frames
       const optimizedPaths = await optimizeFrames(
@@ -135,20 +137,24 @@ Requires video download capability for frame extraction.`,
         );
       }
 
-      await reportProgress({ progress: 75, total: 100 });
+      await progress(70, 'Filtering and deduplicating frames...');
 
       // OCR
-      const ocrResults = await extractTextFromFrames(frames, ocrLanguage).catch((e: unknown) => {
+      await progress(75, `Running OCR on ${frames.length} frames...`);
+      const ocrResults = await extractTextFromFrames(frames, ocrLanguage, (completed, total) => {
+        const pct = 75 + Math.round((completed / total) * 15);
+        progress(pct, `OCR: processing frame ${completed}/${total}...`);
+      }).catch((e: unknown) => {
         warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
         return [];
       });
 
-      await reportProgress({ progress: 90, total: 100 });
+      await progress(92, 'Building annotated timeline...');
 
       // Build mini-timeline for this range
       const timeline = buildAnnotatedTimeline(transcriptSegment, frames, ocrResults);
 
-      await reportProgress({ progress: 100, total: 100 });
+      await progress(100, 'Moment analysis complete');
 
       // Build response
       const textData = {

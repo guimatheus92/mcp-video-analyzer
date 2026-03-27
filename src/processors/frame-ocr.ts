@@ -15,6 +15,7 @@ export interface IOcrResult {
 export async function extractTextFromFrames(
   frames: IFrameResult[],
   language = 'eng+por',
+  onProgress?: (completed: number, total: number) => void,
 ): Promise<IOcrResult[]> {
   const Tesseract = await loadTesseract();
   if (!Tesseract) return [];
@@ -24,7 +25,8 @@ export async function extractTextFromFrames(
   try {
     const results: IOcrResult[] = [];
 
-    for (const frame of frames) {
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
       try {
         const {
           data: { text, confidence },
@@ -41,6 +43,7 @@ export async function extractTextFromFrames(
       } catch {
         // Skip frames that fail OCR
       }
+      onProgress?.(i + 1, frames.length);
     }
 
     return results;
