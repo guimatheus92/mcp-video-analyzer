@@ -10,6 +10,10 @@ MCP server for video analysis — extracts transcripts, key frames, and metadata
 
 No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does.
 
+## Hosted deployment
+
+A hosted deployment is available on [Fronteir AI](https://fronteir.ai/mcp/guimatheus92-mcp-video-analyzer).
+
 ## Installation
 
 ### Prerequisites
