@@ -181,6 +181,8 @@ Results are cached in memory for 10 minutes. Subsequent calls with the same URL 
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
 >
 > **Sidecar transcripts**: if a `clip.vtt`, `clip.srt`, `clip.en.vtt`, etc. lives next to `clip.mp4`, it's used as the transcript automatically — no Whisper roundtrip needed. SRT is converted to VTT in-memory.
+>
+> **Embedded subtitles**: if no sidecar is found and the container has an embedded subtitle stream (common in `.mkv` / `.mov` / `.mp4` from screen recorders), it's transmuxed to VTT via ffmpeg and used as the transcript.
 
 ### Frame Extraction Strategies
 

@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { UserError } from 'fastmcp';
+import { extractEmbeddedSubtitle } from '../processors/embedded-subtitles.js';
 import { formatTimestamp, probeVideo } from '../processors/frame-extractor.js';
 import type {
   IAdapterCapabilities,
@@ -69,7 +70,13 @@ export class LocalFileAdapter implements IVideoAdapter {
 
   async getTranscript(input: string): Promise<ITranscriptEntry[]> {
     const path = this.resolve(input);
-    return findSidecarTranscript(path);
+
+    // Sidecars first — if the user dropped a transcript next to the file
+    // they likely want that one used over anything muxed in the container.
+    const sidecar = await findSidecarTranscript(path);
+    if (sidecar.length > 0) return sidecar;
+
+    return extractEmbeddedSubtitle(path);
   }
 
   async getComments(_input: string): Promise<IVideoComment[]> {
