@@ -176,9 +176,11 @@ Results are cached in memory for 10 minutes. Subsequent calls with the same URL 
 |--------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes | None |
 | **Direct URL** (.mp4, .webm, .mov) | No | Duration only | No | Yes | None |
-| **Local file** (absolute path or `file://` URI) | Whisper fallback only | Filename + duration | No | Yes | None |
+| **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
 
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
+>
+> **Sidecar transcripts**: if a `clip.vtt`, `clip.srt`, `clip.en.vtt`, etc. lives next to `clip.mp4`, it's used as the transcript automatically — no Whisper roundtrip needed. SRT is converted to VTT in-memory.
 
 ### Frame Extraction Strategies
 

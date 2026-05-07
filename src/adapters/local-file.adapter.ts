@@ -9,6 +9,7 @@ import type {
   IVideoComment,
   IVideoMetadata,
 } from '../types.js';
+import { findSidecarTranscript } from '../utils/sidecar-transcripts.js';
 import { detectPlatform, toLocalPath } from '../utils/url-detector.js';
 import type { IVideoAdapter } from './adapter.interface.js';
 
@@ -27,7 +28,9 @@ import type { IVideoAdapter } from './adapter.interface.js';
 export class LocalFileAdapter implements IVideoAdapter {
   readonly name = 'local';
   readonly capabilities: IAdapterCapabilities = {
-    transcript: false,
+    // Sidecar `.vtt`/`.srt` files next to the video are picked up; if none
+    // exist this still returns [] and Whisper fallback handles it.
+    transcript: true,
     metadata: true,
     comments: false,
     chapters: false,
@@ -64,8 +67,9 @@ export class LocalFileAdapter implements IVideoAdapter {
     };
   }
 
-  async getTranscript(_input: string): Promise<ITranscriptEntry[]> {
-    return [];
+  async getTranscript(input: string): Promise<ITranscriptEntry[]> {
+    const path = this.resolve(input);
+    return findSidecarTranscript(path);
   }
 
   async getComments(_input: string): Promise<IVideoComment[]> {

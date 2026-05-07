@@ -75,9 +75,21 @@ describe('LocalFileAdapter', () => {
     });
   });
 
-  describe('getTranscript / getComments / getChapters / getAiSummary', () => {
-    it('all return empty/null', async () => {
+  describe('getTranscript', () => {
+    it('returns [] when no sidecar exists', async () => {
       expect(await adapter.getTranscript(videoPath)).toEqual([]);
+    });
+
+    it('picks up a sidecar .vtt next to the video', async () => {
+      writeFileSync(join(tmp, 'demo.vtt'), 'WEBVTT\n\n00:00:00.000 --> 00:00:02.000\nHello.\n');
+      const entries = await adapter.getTranscript(videoPath);
+      expect(entries).toHaveLength(1);
+      expect(entries[0].text).toBe('Hello.');
+    });
+  });
+
+  describe('getComments / getChapters / getAiSummary', () => {
+    it('all return empty/null', async () => {
       expect(await adapter.getComments(videoPath)).toEqual([]);
       expect(await adapter.getChapters(videoPath)).toEqual([]);
       expect(await adapter.getAiSummary(videoPath)).toBeNull();
