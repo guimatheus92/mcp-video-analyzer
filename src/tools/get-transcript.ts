@@ -65,27 +65,38 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
 
       await progress(40, 'Native transcript fetched');
 
-      // Whisper fallback if no native transcript
+      // Whisper fallback if no native transcript.
       if (transcript.length === 0 && adapter.capabilities.videoDownload) {
-        let tempDir: string | null = null;
-        try {
-          await progress(45, 'No native transcript, downloading video for Whisper...');
-          tempDir = await createTempDir();
-          const videoPath = await adapter.downloadVideo(url, tempDir);
-          if (videoPath) {
-            await progress(65, 'Transcribing audio with Whisper...');
-            const audioPath = await extractAudioTrack(videoPath, tempDir);
-            transcript = await transcribeAudio(audioPath);
-            if (transcript.length > 0) {
-              warnings.push(
-                'Transcript generated via Whisper fallback (no native transcript available).',
-              );
+        // Skip the fallback if the source advertises no audio track —
+        // a metadata probe is cheap; transcription is not.
+        const hasAudio = await adapter
+          .getMetadata(url)
+          .then((m) => m.hasAudio)
+          .catch(() => undefined);
+
+        if (hasAudio === false) {
+          warnings.push('No audio track detected — skipped Whisper transcription.');
+        } else {
+          let tempDir: string | null = null;
+          try {
+            await progress(45, 'No native transcript, downloading video for Whisper...');
+            tempDir = await createTempDir();
+            const videoPath = await adapter.downloadVideo(url, tempDir);
+            if (videoPath) {
+              await progress(65, 'Transcribing audio with Whisper...');
+              const audioPath = await extractAudioTrack(videoPath, tempDir);
+              transcript = await transcribeAudio(audioPath);
+              if (transcript.length > 0) {
+                warnings.push(
+                  'Transcript generated via Whisper fallback (no native transcript available).',
+                );
+              }
             }
+          } catch {
+            // Whisper fallback failed — not critical
+          } finally {
+            if (tempDir) await cleanupTempDir(tempDir).catch(() => undefined);
           }
-        } catch {
-          // Whisper fallback failed — not critical
-        } finally {
-          if (tempDir) await cleanupTempDir(tempDir).catch(() => undefined);
         }
       }
 

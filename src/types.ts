@@ -13,6 +13,16 @@ export interface IVideoMetadata {
   durationFormatted: string;
   url: string;
   thumbnailUrl?: string;
+  // Optional fields populated when the source is local and ffmpeg can probe
+  // the file directly. Adapters that don't have this info leave them undefined.
+  width?: number;
+  height?: number;
+  fps?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  hasAudio?: boolean;
+  creationTime?: string;
+  fileSizeBytes?: number;
 }
 
 export interface IVideoComment {

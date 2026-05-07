@@ -70,6 +70,80 @@ function parseDurationFromStderr(stderr: string): number {
   return hours * 3600 + minutes * 60 + seconds + centiseconds / 100;
 }
 
+export interface IVideoProbeResult {
+  duration: number;
+  width?: number;
+  height?: number;
+  fps?: number;
+  videoCodec?: string;
+  hasAudio: boolean;
+  audioCodec?: string;
+  creationTime?: string;
+}
+
+/**
+ * Probe a video file's metadata by parsing ffmpeg's stderr.
+ *
+ * `ffmpeg-static` doesn't ship `ffprobe`, so we invoke ffmpeg with no output
+ * — it prints stream info to stderr and exits with code 1 ("At least one
+ * output file must be specified"). This is the same trick `probeVideoDuration`
+ * uses; we just parse more fields.
+ */
+export async function probeVideo(videoPath: string): Promise<IVideoProbeResult> {
+  let stderr: string;
+  try {
+    ({ stderr } = await execFile(ffmpegPath, ['-i', videoPath], { timeout: 30000 }));
+  } catch (error: unknown) {
+    if (error && typeof error === 'object' && 'stderr' in error) {
+      stderr = (error as { stderr: string }).stderr;
+    } else {
+      throw new Error(`Failed to probe video: ${videoPath}`, { cause: error });
+    }
+  }
+
+  // ffmpeg only prints "Input #N, ..." when it successfully opens the file.
+  // If that line is missing, the path was bad / format unrecognized — surface
+  // the error rather than returning a half-empty result.
+  if (!/^Input #\d+/m.test(stderr)) {
+    throw new Error(`Failed to probe video: ${videoPath}`);
+  }
+
+  return parseProbeFromStderr(stderr);
+}
+
+function parseProbeFromStderr(stderr: string): IVideoProbeResult {
+  const result: IVideoProbeResult = {
+    duration: parseDurationFromStderr(stderr),
+    hasAudio: false,
+  };
+
+  // Only parse the input section — ffmpeg may also print output streams.
+  const inputSection = stderr.split(/^Output #\d+/m)[0];
+
+  const videoMatch = inputSection.match(
+    /Stream #\d+:\d+(?:[^:]*)?: Video: (\S+?)(?:\s|,)[^\n]*?(\d{2,5})x(\d{2,5})[^\n]*?(\d+(?:\.\d+)?) fps/,
+  );
+  if (videoMatch) {
+    result.videoCodec = videoMatch[1].replace(/,$/, '');
+    result.width = parseInt(videoMatch[2], 10);
+    result.height = parseInt(videoMatch[3], 10);
+    result.fps = parseFloat(videoMatch[4]);
+  }
+
+  const audioMatch = inputSection.match(/Stream #\d+:\d+(?:[^:]*)?: Audio: (\S+?)(?:\s|,)/);
+  if (audioMatch) {
+    result.hasAudio = true;
+    result.audioCodec = audioMatch[1].replace(/,$/, '');
+  }
+
+  const creationMatch = inputSection.match(/creation_time\s*:\s*(\S+)/);
+  if (creationMatch) {
+    result.creationTime = creationMatch[1];
+  }
+
+  return result;
+}
+
 export function parseSceneTimestamps(stderr: string): number[] {
   const timestamps: number[] = [];
   const regex = /pts_time:(\d+(?:\.\d+)?)/g;

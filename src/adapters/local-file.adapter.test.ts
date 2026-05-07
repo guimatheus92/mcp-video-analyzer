@@ -51,7 +51,6 @@ describe('LocalFileAdapter', () => {
       const metadata = await adapter.getMetadata(videoPath);
       expect(metadata.platform).toBe('local');
       expect(metadata.title).toBe('demo.mp4');
-      expect(metadata.duration).toBe(0);
       expect(metadata.url).toBe(videoPath);
     });
 
@@ -60,6 +59,19 @@ describe('LocalFileAdapter', () => {
       const metadata = await adapter.getMetadata(fileUri);
       expect(metadata.title).toBe('demo.mp4');
       expect(metadata.url).toBe(fileUri);
+    });
+
+    it('reports file size from stat', async () => {
+      const metadata = await adapter.getMetadata(videoPath);
+      expect(metadata.fileSizeBytes).toBe('fake video bytes'.length);
+    });
+
+    it('falls back to duration=0 when ffmpeg cannot probe (corrupt content)', async () => {
+      // The fake "video" written above isn't a valid container — probe fails
+      // gracefully and we still get a sensible metadata object.
+      const metadata = await adapter.getMetadata(videoPath);
+      expect(metadata.duration).toBe(0);
+      expect(metadata.durationFormatted).toBe('0:00');
     });
   });
 

@@ -15,7 +15,7 @@ import {
 } from '../processors/frame-extractor.js';
 import { extractTextFromFrames } from '../processors/frame-ocr.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
-import type { IAnalysisResult } from '../types.js';
+import type { IAnalysisResult, IVideoMetadata } from '../types.js';
 import { AnalysisCache, cacheKey } from '../utils/cache.js';
 import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
@@ -190,7 +190,7 @@ Use options.forceRefresh to bypass the cache.`,
 
         // Fetch metadata, transcript, comments in parallel
         const [metadata, transcript, comments, chapters, aiSummary] = await Promise.all([
-          adapter.getMetadata(url).catch((e: unknown) => {
+          adapter.getMetadata(url).catch((e: unknown): IVideoMetadata => {
             warnings.push(
               `Failed to fetch metadata: ${e instanceof Error ? e.message : String(e)}`,
             );
@@ -396,8 +396,10 @@ Use options.forceRefresh to bypass the cache.`,
           }
         }
 
-        // Whisper fallback: if no transcript and we have a video file
-        if (result.transcript.length === 0 && videoPath) {
+        // Whisper fallback: if no transcript and we have a video file.
+        // Skip when the source is known to have no audio track (saves 30s+
+        // of needless transcription on silent screencasts).
+        if (result.transcript.length === 0 && videoPath && metadata.hasAudio !== false) {
           try {
             const audioPath = await extractAudioTrack(videoPath, tempDir ?? '');
             const whisperTranscript = await transcribeAudio(audioPath);

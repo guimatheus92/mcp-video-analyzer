@@ -1,6 +1,7 @@
 import { existsSync, statSync } from 'node:fs';
 import { basename } from 'node:path';
 import { UserError } from 'fastmcp';
+import { formatTimestamp, probeVideo } from '../processors/frame-extractor.js';
 import type {
   IAdapterCapabilities,
   IChapter,
@@ -18,9 +19,10 @@ import type { IVideoAdapter } from './adapter.interface.js';
  * unchanged — frame extraction and audio transcoding then run via the same
  * ffmpeg pipeline used for downloaded videos.
  *
- * Duration probing via ffprobe could be added here, but the existing tools
- * already fall back to `probeVideoDuration(videoPath)` when metadata reports 0,
- * which gives the same result for free.
+ * `getMetadata` runs an ffmpeg probe to populate duration, dimensions, fps,
+ * codecs, audio-track presence, and container creation_time when available.
+ * This is cheap (~50ms) because the file is already on disk and lets callers
+ * skip the Whisper fallback for silent recordings.
  */
 export class LocalFileAdapter implements IVideoAdapter {
   readonly name = 'local';
@@ -39,12 +41,26 @@ export class LocalFileAdapter implements IVideoAdapter {
 
   async getMetadata(input: string): Promise<IVideoMetadata> {
     const path = this.resolve(input);
+
+    const stat = statSync(path, { throwIfNoEntry: false });
+    const fileSizeBytes = stat?.isFile() ? stat.size : undefined;
+
+    const probe = await probeVideo(path).catch(() => null);
+
     return {
       platform: 'local',
       title: basename(path),
-      duration: 0,
-      durationFormatted: '0:00',
+      duration: probe?.duration ?? 0,
+      durationFormatted: formatTimestamp(Math.floor(probe?.duration ?? 0)),
       url: input,
+      width: probe?.width,
+      height: probe?.height,
+      fps: probe?.fps,
+      videoCodec: probe?.videoCodec,
+      audioCodec: probe?.audioCodec,
+      hasAudio: probe?.hasAudio,
+      creationTime: probe?.creationTime,
+      fileSizeBytes,
     };
   }
 

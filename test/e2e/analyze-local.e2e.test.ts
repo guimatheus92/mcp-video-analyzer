@@ -70,4 +70,19 @@ describe('E2E: Local file analysis', () => {
     expect(metadata.platform).toBe('local');
     expect(metadata.title).toBe('tiny.mp4');
   });
+
+  it('populates rich metadata via ffmpeg probe (duration, dims, codec, hasAudio)', async () => {
+    const adapter = getAdapter(TEST_LOCAL_VIDEO_PATH);
+    const metadata = await adapter.getMetadata(TEST_LOCAL_VIDEO_PATH);
+
+    expect(metadata.duration).toBeGreaterThan(2);
+    expect(metadata.duration).toBeLessThan(4);
+    expect(metadata.durationFormatted).toMatch(/^0:0[23]$/);
+    expect(metadata.width).toBe(320);
+    expect(metadata.height).toBe(240);
+    expect(metadata.fps).toBe(10);
+    expect(metadata.videoCodec).toBe('h264');
+    expect(metadata.hasAudio).toBe(false);
+    expect(metadata.fileSizeBytes).toBeGreaterThan(0);
+  });
 });

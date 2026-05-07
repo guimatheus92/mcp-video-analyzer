@@ -10,6 +10,7 @@ import {
   formatTimestamp,
   parseSceneTimestamps,
   parseTimestamp,
+  probeVideo,
   probeVideoDuration,
 } from './frame-extractor.js';
 
@@ -87,6 +88,29 @@ describe('probeVideoDuration', () => {
 
   it('throws for non-existent file', async () => {
     await expect(probeVideoDuration('/nonexistent/video.mp4')).rejects.toThrow();
+  });
+});
+
+describe('probeVideo', () => {
+  it('returns full metadata for tiny.mp4 fixture', async () => {
+    const probe = await probeVideo(join(FIXTURES_DIR, 'tiny.mp4'));
+
+    expect(probe.duration).toBeGreaterThan(2);
+    expect(probe.duration).toBeLessThan(4);
+    expect(probe.width).toBe(320);
+    expect(probe.height).toBe(240);
+    expect(probe.fps).toBe(10);
+    expect(probe.videoCodec).toBe('h264');
+  });
+
+  it('reports hasAudio=false for tiny.mp4 (no audio track)', async () => {
+    const probe = await probeVideo(join(FIXTURES_DIR, 'tiny.mp4'));
+    expect(probe.hasAudio).toBe(false);
+    expect(probe.audioCodec).toBeUndefined();
+  });
+
+  it('throws for non-existent file', async () => {
+    await expect(probeVideo('/nonexistent/video.mp4')).rejects.toThrow();
   });
 });
 
