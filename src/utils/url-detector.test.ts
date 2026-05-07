@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectPlatform, extractLoomId } from './url-detector.js';
+import { detectPlatform, extractLoomId, isVideoSource, toLocalPath } from './url-detector.js';
 
 describe('detectPlatform', () => {
   it('detects Loom share URLs', () => {
@@ -68,6 +68,80 @@ describe('detectPlatform', () => {
 
   it('handles case-insensitive extensions', () => {
     expect(detectPlatform('https://example.com/VIDEO.MP4')).toBe('direct');
+  });
+
+  it('detects absolute POSIX paths to video files as local', () => {
+    expect(detectPlatform('/Users/me/Movies/clip.mp4')).toBe('local');
+    expect(detectPlatform('/tmp/video.webm')).toBe('local');
+  });
+
+  it('detects file:// URIs as local', () => {
+    expect(detectPlatform('file:///Users/me/Movies/clip.mp4')).toBe('local');
+    expect(detectPlatform('file:///tmp/video.mov')).toBe('local');
+  });
+
+  it('returns null for absolute paths that are not video files', () => {
+    expect(detectPlatform('/Users/me/notes.txt')).toBeNull();
+    expect(detectPlatform('/tmp/page.html')).toBeNull();
+  });
+
+  it('returns null for relative paths', () => {
+    expect(detectPlatform('./video.mp4')).toBeNull();
+    expect(detectPlatform('video.mp4')).toBeNull();
+    expect(detectPlatform('../movies/clip.mp4')).toBeNull();
+  });
+});
+
+describe('toLocalPath', () => {
+  it('returns the path unchanged for absolute POSIX paths', () => {
+    expect(toLocalPath('/tmp/video.mp4')).toBe('/tmp/video.mp4');
+  });
+
+  it('converts file:// URIs to fs paths', () => {
+    expect(toLocalPath('file:///tmp/video.mp4')).toBe('/tmp/video.mp4');
+  });
+
+  it('returns null for HTTP URLs', () => {
+    expect(toLocalPath('https://example.com/video.mp4')).toBeNull();
+  });
+
+  it('returns null for relative paths', () => {
+    expect(toLocalPath('./video.mp4')).toBeNull();
+    expect(toLocalPath('video.mp4')).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(toLocalPath('')).toBeNull();
+  });
+});
+
+describe('isVideoSource', () => {
+  it('accepts Loom URLs', () => {
+    expect(isVideoSource('https://loom.com/share/abc123')).toBe(true);
+  });
+
+  it('accepts direct video URLs', () => {
+    expect(isVideoSource('https://example.com/video.mp4')).toBe(true);
+  });
+
+  it('accepts absolute paths to video files', () => {
+    expect(isVideoSource('/tmp/video.mp4')).toBe(true);
+  });
+
+  it('accepts file:// URIs to video files', () => {
+    expect(isVideoSource('file:///tmp/video.mp4')).toBe(true);
+  });
+
+  it('rejects relative paths', () => {
+    expect(isVideoSource('./video.mp4')).toBe(false);
+  });
+
+  it('rejects non-video URLs', () => {
+    expect(isVideoSource('https://example.com/page.html')).toBe(false);
+  });
+
+  it('rejects empty string', () => {
+    expect(isVideoSource('')).toBe(false);
   });
 });
 

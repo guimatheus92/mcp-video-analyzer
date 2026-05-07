@@ -6,7 +6,7 @@
 
 Featured in [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process).
 
-MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs. Supports Loom, direct video files (.mp4, .webm), and more.
+MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs and local video files. Supports Loom, direct video URLs (.mp4, .webm, .mov), and absolute paths to local video files.
 
 No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does.
 
@@ -170,12 +170,15 @@ For motion, vibration, animations, or fast scrolling — burst mode captures N f
 
 Results are cached in memory for 10 minutes. Subsequent calls with the same URL and options return instantly. Use `forceRefresh: true` to bypass the cache.
 
-## Supported Platforms
+## Supported Sources
 
-| Platform | Transcript | Metadata | Comments | Frames | Auth |
-|----------|:----------:|:--------:|:--------:|:------:|:----:|
+| Source | Transcript | Metadata | Comments | Frames | Auth |
+|--------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes | None |
-| **Direct URL** (.mp4, .webm) | No | Duration only | No | Yes | None |
+| **Direct URL** (.mp4, .webm, .mov) | No | Duration only | No | Yes | None |
+| **Local file** (absolute path or `file://` URI) | Whisper fallback only | Filename + duration | No | Yes | None |
+
+> **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
 
 ### Frame Extraction Strategies
 
@@ -272,10 +275,11 @@ src/
 │   ├── get-frames.ts           # Frames-only (scene-change or dense)
 │   ├── get-frame-at.ts         # Single frame at timestamp
 │   └── get-frame-burst.ts      # N frames in a time range
-├── adapters/                   # Platform-specific logic
+├── adapters/                   # Source-specific logic
 │   ├── adapter.interface.ts    # IVideoAdapter interface + registry
 │   ├── loom.adapter.ts         # Loom: authless GraphQL
-│   └── direct.adapter.ts       # Direct URL: any mp4/webm link
+│   ├── direct.adapter.ts       # Direct URL: any mp4/webm link
+│   └── local-file.adapter.ts   # Local files: absolute path or file:// URI
 ├── processors/                 # Shared processing
 │   ├── frame-extractor.ts      # ffmpeg scene detection + dense + burst extraction
 │   ├── browser-frame-extractor.ts # Headless Chrome fallback for frames

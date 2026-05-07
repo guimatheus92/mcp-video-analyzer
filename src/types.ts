@@ -6,7 +6,7 @@ export interface ITranscriptEntry {
 }
 
 export interface IVideoMetadata {
-  platform: 'loom' | 'direct' | 'unknown';
+  platform: 'loom' | 'direct' | 'local' | 'unknown';
   title: string;
   description?: string;
   duration: number;

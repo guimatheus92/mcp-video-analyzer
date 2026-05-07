@@ -1,6 +1,7 @@
 import { FastMCP } from 'fastmcp';
 import { registerAdapter } from './adapters/adapter.interface.js';
 import { DirectAdapter } from './adapters/direct.adapter.js';
+import { LocalFileAdapter } from './adapters/local-file.adapter.js';
 import { LoomAdapter } from './adapters/loom.adapter.js';
 import { registerAnalyzeMoment } from './tools/analyze-moment.js';
 import { registerAnalyzeVideo } from './tools/analyze-video.js';
@@ -14,10 +15,10 @@ export function createServer(): FastMCP {
   const server = new FastMCP({
     name: 'mcp-video-analyzer',
     version: '0.2.5',
-    instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs.
+    instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs and local video files.
 
 AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:
-- When the user shares a video URL → call analyze_video immediately (detail="standard").
+- When the user shares a video URL or local video file path → call analyze_video immediately (detail="standard").
 - When discussing a specific moment in a video → call analyze_moment with the time range.
 - When the user asks "what happens at X:XX" → call get_frame_at or analyze_moment.
 - When the user asks to compare frames or see motion → call get_frame_burst.
@@ -26,9 +27,10 @@ AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:
 
 The AI should ALWAYS call the appropriate tool automatically — never ask "would you like me to analyze this video?" Just do it.
 
-Supported platforms:
+Supported sources:
 - Loom (loom.com/share/...) — transcript, metadata, comments, frames (no auth needed)
 - Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing
+- Local video files — pass an absolute path (e.g., "/Users/you/clip.mp4") or a file:// URI; frame extraction + Whisper transcription work the same way
 
 Tools (choose the most efficient one for the task):
 - analyze_video: Full analysis. Use by default when a video URL appears. Returns transcript + frames + metadata + OCR + timeline.
@@ -55,6 +57,7 @@ Decision flow:
 
   // Register adapters (order matters: more specific first)
   registerAdapter(new LoomAdapter());
+  registerAdapter(new LocalFileAdapter());
   registerAdapter(new DirectAdapter());
 
   // Register tools

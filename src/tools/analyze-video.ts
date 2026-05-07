@@ -21,6 +21,7 @@ import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
+import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
 
 const cache = new AnalysisCache();
 
@@ -90,7 +91,15 @@ const AnalyzeOptionsSchema = z
   .optional();
 
 const AnalyzeVideoSchema = z.object({
-  url: z.string().url().describe('Video URL (Loom share link or direct mp4/webm URL)'),
+  url: z
+    .string()
+    .refine(isVideoSource, {
+      message:
+        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+    })
+    .describe(
+      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+    ),
   options: AnalyzeOptionsSchema.describe('Analysis options'),
 });
 
@@ -107,7 +116,7 @@ Returns structured data about the video content:
 - Metadata (title, duration, platform)
 - Comments from viewers (if available)
 
-Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).
+Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
 
 Detail levels:
 - "brief": metadata + truncated transcript only (fast, no video download)
@@ -186,7 +195,7 @@ Use options.forceRefresh to bypass the cache.`,
               `Failed to fetch metadata: ${e instanceof Error ? e.message : String(e)}`,
             );
             return {
-              platform: adapter.name as 'loom' | 'direct' | 'unknown',
+              platform: adapter.name as 'loom' | 'direct' | 'local' | 'unknown',
               title: 'Unknown',
               duration: 0,
               durationFormatted: '0:00',
@@ -292,8 +301,11 @@ Use options.forceRefresh to bypass the cache.`,
             }
           }
 
-          // Strategy 2: Browser-based extraction (fallback)
-          if (!framesExtracted && metadata.duration > 0) {
+          // Strategy 2: Browser-based extraction (fallback) — skipped for local
+          // files since puppeteer.goto() can't load fs paths reliably and the
+          // ffmpeg path above always works for files already on disk.
+          const isLocal = toLocalPath(url) !== null;
+          if (!framesExtracted && !isLocal && metadata.duration > 0) {
             await progress(50, 'Extracting frames via browser fallback...');
 
             const timestamps = generateTimestamps(metadata.duration, maxFrames);
