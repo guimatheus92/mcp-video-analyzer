@@ -8,6 +8,7 @@ import {
   extractDenseFrames,
   extractFrameAt,
   formatTimestamp,
+  parseProbeFromStderr,
   parseSceneTimestamps,
   parseTimestamp,
   probeVideo,
@@ -111,6 +112,53 @@ describe('probeVideo', () => {
 
   it('throws for non-existent file', async () => {
     await expect(probeVideo('/nonexistent/video.mp4')).rejects.toThrow();
+  });
+});
+
+describe('parseProbeFromStderr', () => {
+  it('parses a stream with audio and creation_time', () => {
+    const stderr = [
+      "Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'sample.mp4':",
+      '  Metadata:',
+      '    creation_time   : 2024-01-15T10:30:00.000000Z',
+      '  Duration: 00:01:23.45, start: 0.000000, bitrate: 1234 kb/s',
+      '  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1920x1080, 5000 kb/s, 30 fps, 30 tbr, 15360 tbn (default)',
+      '  Stream #0:1[0x2](eng): Audio: aac (LC) (mp4a / 0x6134706D), 48000 Hz, stereo, fltp, 128 kb/s (default)',
+    ].join('\n');
+
+    const probe = parseProbeFromStderr(stderr);
+
+    expect(probe.duration).toBeCloseTo(83.45, 1);
+    expect(probe.width).toBe(1920);
+    expect(probe.height).toBe(1080);
+    expect(probe.fps).toBe(30);
+    expect(probe.videoCodec).toBe('h264');
+    expect(probe.hasAudio).toBe(true);
+    expect(probe.audioCodec).toBe('aac');
+    expect(probe.creationTime).toBe('2024-01-15T10:30:00.000000Z');
+  });
+
+  it('parses resolution/codec even when ffmpeg omits fps (VFR / tbr-only stream)', () => {
+    const stderr = [
+      "Input #0, matroska,webm, from 'novfr.mkv':",
+      '  Duration: 00:00:10.00, start: 0.000000, bitrate: 800 kb/s',
+      '  Stream #0:0: Video: vp9 (Profile 0), yuv420p(tv), 1280x720, SAR 1:1 DAR 16:9, 25 tbr, 1k tbn (default)',
+    ].join('\n');
+
+    const probe = parseProbeFromStderr(stderr);
+
+    expect(probe.width).toBe(1280);
+    expect(probe.height).toBe(720);
+    expect(probe.videoCodec).toBe('vp9');
+    expect(probe.fps).toBeUndefined();
+    expect(probe.hasAudio).toBe(false);
+  });
+
+  it('returns zeroed/empty result for unparseable stderr', () => {
+    const probe = parseProbeFromStderr('garbage with no recognizable streams');
+    expect(probe.duration).toBe(0);
+    expect(probe.hasAudio).toBe(false);
+    expect(probe.width).toBeUndefined();
   });
 });
 

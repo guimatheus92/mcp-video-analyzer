@@ -111,7 +111,7 @@ export async function probeVideo(videoPath: string): Promise<IVideoProbeResult> 
   return parseProbeFromStderr(stderr);
 }
 
-function parseProbeFromStderr(stderr: string): IVideoProbeResult {
+export function parseProbeFromStderr(stderr: string): IVideoProbeResult {
   const result: IVideoProbeResult = {
     duration: parseDurationFromStderr(stderr),
     hasAudio: false,
@@ -121,13 +121,20 @@ function parseProbeFromStderr(stderr: string): IVideoProbeResult {
   const inputSection = stderr.split(/^Output #\d+/m)[0];
 
   const videoMatch = inputSection.match(
-    /Stream #\d+:\d+(?:[^:]*)?: Video: (\S+?)(?:\s|,)[^\n]*?(\d{2,5})x(\d{2,5})[^\n]*?(\d+(?:\.\d+)?) fps/,
+    /Stream #\d+:\d+(?:[^:]*)?: Video: (\S+?)(?:\s|,)[^\n]*?(\d{2,5})x(\d{2,5})/,
   );
   if (videoMatch) {
     result.videoCodec = videoMatch[1].replace(/,$/, '');
     result.width = parseInt(videoMatch[2], 10);
     result.height = parseInt(videoMatch[3], 10);
-    result.fps = parseFloat(videoMatch[4]);
+  }
+
+  // fps lives on the same Video line, but ffmpeg omits it for some streams
+  // (variable-frame-rate / certain MKV/MOV exports print only tbr/tbn).
+  // Parse it independently so a missing fps doesn't drop codec/resolution above.
+  const fpsMatch = inputSection.match(/: Video:[^\n]*?(\d+(?:\.\d+)?)\s*fps/);
+  if (fpsMatch) {
+    result.fps = parseFloat(fpsMatch[1]);
   }
 
   const audioMatch = inputSection.match(/Stream #\d+:\d+(?:[^:]*)?: Audio: (\S+?)(?:\s|,)/);
