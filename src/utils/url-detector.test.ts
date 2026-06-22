@@ -1,3 +1,5 @@
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { detectPlatform, extractLoomId, isVideoSource, toLocalPath } from './url-detector.js';
 
@@ -76,8 +78,17 @@ describe('detectPlatform', () => {
   });
 
   it('detects file:// URIs as local', () => {
-    expect(detectPlatform('file:///Users/me/Movies/clip.mp4')).toBe('local');
-    expect(detectPlatform('file:///tmp/video.mov')).toBe('local');
+    // Derive the URI from a real absolute path so it is valid on the host OS —
+    // a hardcoded POSIX `file://` literal throws under fileURLToPath on Windows.
+    expect(detectPlatform(pathToFileURL(resolve('Movies', 'clip.mp4')).href)).toBe('local');
+    expect(detectPlatform(pathToFileURL(resolve('tmp', 'video.mov')).href)).toBe('local');
+  });
+
+  // Windows drive paths are only absolute on win32; guard so the suite stays
+  // green on POSIX CI too.
+  (process.platform === 'win32' ? it : it.skip)('detects Windows drive paths as local', () => {
+    expect(detectPlatform('C:\\Users\\me\\clip.mp4')).toBe('local');
+    expect(detectPlatform('C:\\Users\\me\\notes.txt')).toBeNull();
   });
 
   it('returns null for absolute paths that are not video files', () => {
@@ -98,7 +109,8 @@ describe('toLocalPath', () => {
   });
 
   it('converts file:// URIs to fs paths', () => {
-    expect(toLocalPath('file:///tmp/video.mp4')).toBe('/tmp/video.mp4');
+    const abs = resolve('tmp', 'video.mp4');
+    expect(toLocalPath(pathToFileURL(abs).href)).toBe(abs);
   });
 
   it('returns null for HTTP URLs', () => {

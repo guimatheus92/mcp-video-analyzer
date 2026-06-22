@@ -30,7 +30,7 @@ Faster than analyze_video when you only need the transcript.
 If the platform has no native transcript, attempts Whisper fallback transcription
 (requires @huggingface/transformers, whisper CLI, or OPENAI_API_KEY).
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI). Local files have no native transcript — Whisper fallback is used.`,
+Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI). For local files a sidecar .vtt/.srt next to the file is used first, then an embedded subtitle track, and only then the Whisper fallback if neither exists.`,
     parameters: GetTranscriptSchema,
     annotations: {
       title: 'Get Transcript',
@@ -75,7 +75,9 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
           .catch(() => undefined);
 
         if (hasAudio === false) {
-          warnings.push('No audio track detected — skipped Whisper transcription.');
+          warnings.push(
+            'No audio track detected by the probe — skipped Whisper transcription. If the video does have audio, the probe may not have recognized the stream.',
+          );
         } else {
           let tempDir: string | null = null;
           try {

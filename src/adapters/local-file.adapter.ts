@@ -21,16 +21,17 @@ import type { IVideoAdapter } from './adapter.interface.js';
  * unchanged — frame extraction and audio transcoding then run via the same
  * ffmpeg pipeline used for downloaded videos.
  *
- * `getMetadata` runs an ffmpeg probe to populate duration, dimensions, fps,
- * codecs, audio-track presence, and container creation_time when available.
- * This is cheap (~50ms) because the file is already on disk and lets callers
- * skip the Whisper fallback for silent recordings.
+ * `getMetadata` runs a single short-lived ffmpeg probe (no transcode) to
+ * populate duration, dimensions, fps, codecs, audio-track presence, and
+ * container creation_time when available. It's far cheaper than Whisper and
+ * lets callers skip the Whisper fallback for silent recordings.
  */
 export class LocalFileAdapter implements IVideoAdapter {
   readonly name = 'local';
   readonly capabilities: IAdapterCapabilities = {
-    // Sidecar `.vtt`/`.srt` files next to the video are picked up; if none
-    // exist this still returns [] and Whisper fallback handles it.
+    // Sidecar `.vtt`/`.srt` files next to the video are picked up first, then
+    // an embedded subtitle track; if neither exists this returns [] and the
+    // tool-layer Whisper fallback handles it.
     transcript: true,
     metadata: true,
     comments: false,
@@ -46,8 +47,15 @@ export class LocalFileAdapter implements IVideoAdapter {
   async getMetadata(input: string): Promise<IVideoMetadata> {
     const path = this.resolve(input);
 
+    // A missing file is a hard error, not a silent zero-duration result —
+    // throwing here lets the tool layer surface it via warnings[] (and keeps
+    // those warning paths from being dead code). A present-but-unprobeable
+    // file still degrades gracefully below.
     const stat = statSync(path, { throwIfNoEntry: false });
-    const fileSizeBytes = stat?.isFile() ? stat.size : undefined;
+    if (!stat?.isFile()) {
+      throw new UserError(`Local video file not found: ${path}`);
+    }
+    const fileSizeBytes = stat.size;
 
     const probe = await probeVideo(path).catch(() => null);
 

@@ -16,9 +16,10 @@ const ffmpegPath: string = require('ffmpeg-static') as string;
  * inside the video container. ffmpeg can transmux them to WebVTT directly
  * — orders of magnitude cheaper than Whisper.
  *
- * `-map 0:s:0?` makes the subtitle mapping optional: when no subtitle
- * stream exists, ffmpeg produces an empty/header-only VTT that the parser
- * resolves to []. Errors from ffmpeg are non-fatal and degrade to [].
+ * `-map 0:s:0?` makes the subtitle mapping optional so stream selection
+ * doesn't fail outright. When no subtitle stream exists ffmpeg still errors
+ * (it refuses to write an output with no streams) and exits non-zero — the
+ * `catch` below degrades that, and any other ffmpeg failure, to [].
  */
 export async function extractEmbeddedSubtitle(videoPath: string): Promise<ITranscriptEntry[]> {
   try {

@@ -195,7 +195,7 @@ Use options.forceRefresh to bypass the cache.`,
               `Failed to fetch metadata: ${e instanceof Error ? e.message : String(e)}`,
             );
             return {
-              platform: adapter.name as 'loom' | 'direct' | 'local' | 'unknown',
+              platform: adapter.name,
               title: 'Unknown',
               duration: 0,
               durationFormatted: '0:00',
@@ -409,9 +409,15 @@ Use options.forceRefresh to bypass the cache.`,
                 'Transcript generated via Whisper fallback (no native transcript available).',
               );
             }
-          } catch {
-            // Audio extraction or transcription failed — not critical
+          } catch (e: unknown) {
+            warnings.push(`Whisper fallback failed: ${e instanceof Error ? e.message : String(e)}`);
           }
+        }
+
+        // Surface the absence of a transcript explicitly rather than returning
+        // an empty array with no explanation.
+        if (result.transcript.length === 0) {
+          warnings.push('No transcript available for this video.');
         }
 
         await progress(100, 'Analysis complete');

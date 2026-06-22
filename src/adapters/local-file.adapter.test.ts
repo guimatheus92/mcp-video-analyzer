@@ -73,6 +73,12 @@ describe('LocalFileAdapter', () => {
       expect(metadata.duration).toBe(0);
       expect(metadata.durationFormatted).toBe('0:00');
     });
+
+    it('throws UserError when the file does not exist', async () => {
+      await expect(adapter.getMetadata('/tmp/does-not-exist-xyz.mp4')).rejects.toThrow(
+        /not found/i,
+      );
+    });
   });
 
   describe('getTranscript', () => {
