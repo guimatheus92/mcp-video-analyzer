@@ -2,7 +2,7 @@
 
 ## Project
 
-MCP server for video analysis — extracts transcripts, key frames, metadata, OCR text, and annotated timelines from video URLs (Loom, direct .mp4/.webm).
+MCP server for video analysis — extracts transcripts, key frames, metadata, OCR text, and annotated timelines from video URLs (Loom, direct links) and local video files.
 
 ## Commands
 

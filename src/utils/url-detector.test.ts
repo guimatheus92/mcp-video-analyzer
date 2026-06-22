@@ -44,6 +44,17 @@ describe('detectPlatform', () => {
     expect(detectPlatform('https://example.com/video.m4v')).toBe('direct');
   });
 
+  it('detects additional direct video container formats', () => {
+    for (const ext of ['wmv', 'flv', 'mpeg', 'mpg', 'm2ts', 'mts', '3gp', 'ogv']) {
+      expect(detectPlatform(`https://example.com/video.${ext}`)).toBe('direct');
+    }
+  });
+
+  it('does not treat .ts (TypeScript) paths as video', () => {
+    expect(detectPlatform('https://example.com/module.ts')).toBeNull();
+    expect(detectPlatform('/Users/me/src/index.ts')).toBeNull();
+  });
+
   it('returns null for YouTube URLs (unsupported in v0.1)', () => {
     expect(detectPlatform('https://www.youtube.com/watch?v=abc123')).toBeNull();
   });
@@ -75,6 +86,8 @@ describe('detectPlatform', () => {
   it('detects absolute POSIX paths to video files as local', () => {
     expect(detectPlatform('/Users/me/Movies/clip.mp4')).toBe('local');
     expect(detectPlatform('/tmp/video.webm')).toBe('local');
+    expect(detectPlatform('/tmp/recording.mkv')).toBe('local');
+    expect(detectPlatform('/tmp/camera.mts')).toBe('local');
   });
 
   it('detects file:// URIs as local', () => {
