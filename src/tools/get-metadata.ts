@@ -54,7 +54,7 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
         adapter.getMetadata(url).catch((e: unknown) => {
           warnings.push(`Failed to fetch metadata: ${e instanceof Error ? e.message : String(e)}`);
           return {
-            platform: adapter.name as 'loom' | 'direct' | 'local' | 'unknown',
+            platform: adapter.name,
             title: 'Unknown',
             duration: 0,
             durationFormatted: '0:00',

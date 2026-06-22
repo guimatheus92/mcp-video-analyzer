@@ -5,10 +5,11 @@ import type {
   ITranscriptEntry,
   IVideoComment,
   IVideoMetadata,
+  Platform,
 } from '../types.js';
 
 export interface IVideoAdapter {
-  readonly name: string;
+  readonly name: Platform;
   readonly capabilities: IAdapterCapabilities;
 
   canHandle(url: string): boolean;

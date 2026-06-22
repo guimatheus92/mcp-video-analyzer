@@ -92,7 +92,7 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
 
       // Get metadata for duration (needed for browser fallback)
       const metadata = await adapter.getMetadata(url).catch(() => ({
-        platform: adapter.name as 'loom' | 'direct' | 'local' | 'unknown',
+        platform: adapter.name,
         title: 'Unknown',
         duration: 0,
         durationFormatted: '0:00',

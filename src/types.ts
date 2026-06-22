@@ -1,3 +1,9 @@
+/** Video sources the server can detect and route to a dedicated adapter. */
+export type Platform = 'loom' | 'direct' | 'local';
+
+/** Platform as reported in metadata; `'unknown'` is a fallback sentinel. */
+type MetadataPlatform = Platform | 'unknown';
+
 export interface ITranscriptEntry {
   time: string;
   endTime?: string;
@@ -6,7 +12,7 @@ export interface ITranscriptEntry {
 }
 
 export interface IVideoMetadata {
-  platform: 'loom' | 'direct' | 'local' | 'unknown';
+  platform: MetadataPlatform;
   title: string;
   description?: string;
   duration: number;

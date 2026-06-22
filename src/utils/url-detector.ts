@@ -1,11 +1,10 @@
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { Platform } from '../types.js';
 
 const LOOM_PATTERN = /^https?:\/\/(?:www\.)?loom\.com\/(?:share|embed)\/([a-f0-9-]+)/i;
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']);
-
-type Platform = 'loom' | 'direct' | 'local';
 
 export function detectPlatform(url: string): Platform | null {
   if (!url) return null;
