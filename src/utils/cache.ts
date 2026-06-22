@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
 import type { IAnalysisResult } from '../types.js';
+import { toLocalPath } from './url-detector.js';
 
 interface CacheEntry {
   value: IAnalysisResult;
@@ -106,10 +108,26 @@ export class AnalysisCache {
 
 /**
  * Generate a deterministic cache key from a URL and optional parameters.
+ *
+ * For local file paths, mixes in `mtime` and `size` from `stat` so editing
+ * the file invalidates cached analysis. URL inputs are unaffected.
  */
 export function cacheKey(url: string, params?: Record<string, unknown>): string {
-  const input = params ? url + JSON.stringify(sortKeys(params)) : url;
+  const stamp = localFileStamp(url);
+  const base = stamp ? `${url}|${stamp}` : url;
+  const input = params ? base + JSON.stringify(sortKeys(params)) : base;
   return createHash('sha256').update(input).digest('hex').slice(0, 16);
+}
+
+function localFileStamp(input: string): string | null {
+  const path = toLocalPath(input);
+  if (!path) return null;
+  try {
+    const stat = statSync(path);
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return null;
+  }
 }
 
 function sortKeys(obj: Record<string, unknown>): Record<string, unknown> {

@@ -1,0 +1,38 @@
+# Normalize line endings: store text as LF in the repo and check out as LF on
+# every OS, regardless of core.autocrlf. This prevents CRLF working-tree files
+# on Windows, which otherwise fail Prettier's format:check (and `npm run check`
+# / `prepublishOnly`). Repo blobs are already LF, so this is not a renormalization.
+* text=auto eol=lf
+
+# Binary assets — never line-ending-normalize these.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.ico  binary
+*.webp binary
+*.pdf  binary
+*.woff  binary
+*.woff2 binary
+*.ttf  binary
+*.eot  binary
+*.otf  binary
+
+# Video / audio fixtures and assets.
+*.mp4  binary
+*.webm binary
+*.mov  binary
+*.mkv  binary
+*.avi  binary
+*.m4v  binary
+*.wmv  binary
+*.flv  binary
+*.mpeg binary
+*.mpg  binary
+*.m2ts binary
+*.mts  binary
+*.3gp  binary
+*.ogv  binary
+*.mp3  binary
+*.wav  binary
+*.m4a  binary

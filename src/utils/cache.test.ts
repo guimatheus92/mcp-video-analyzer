@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { IAnalysisResult } from '../types.js';
 import { AnalysisCache, cacheKey } from './cache.js';
@@ -163,5 +166,48 @@ describe('cacheKey', () => {
   it('handles URL without params', () => {
     const key = cacheKey('https://example.com/video.mp4');
     expect(key).toHaveLength(16);
+  });
+
+  describe('local file inputs', () => {
+    let tmp: string;
+    let videoPath: string;
+
+    beforeEach(() => {
+      tmp = mkdtempSync(join(tmpdir(), 'cache-key-'));
+      videoPath = join(tmp, 'clip.mp4');
+      writeFileSync(videoPath, 'a');
+    });
+
+    afterEach(() => {
+      rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it('produces a different key when the file size changes', () => {
+      const before = cacheKey(videoPath);
+      writeFileSync(videoPath, 'aaaa');
+      const after = cacheKey(videoPath);
+      expect(after).not.toBe(before);
+    });
+
+    it('produces a different key when only mtime changes', () => {
+      const before = cacheKey(videoPath);
+      // Bump mtime by 5 seconds without changing size
+      const future = new Date(Date.now() + 5000);
+      utimesSync(videoPath, future, future);
+      const after = cacheKey(videoPath);
+      expect(after).not.toBe(before);
+    });
+
+    it('produces the same key for the same file across calls', () => {
+      const a = cacheKey(videoPath);
+      const b = cacheKey(videoPath);
+      expect(a).toBe(b);
+    });
+
+    it('falls back to path-only key when the file is missing', () => {
+      const missing = join(tmp, 'does-not-exist.mp4');
+      const key = cacheKey(missing);
+      expect(key).toHaveLength(16);
+    });
   });
 });
