@@ -2,6 +2,7 @@ import { FastMCP } from 'fastmcp';
 import { registerAdapter } from './adapters/adapter.interface.js';
 import { DirectAdapter } from './adapters/direct.adapter.js';
 import { LoomAdapter } from './adapters/loom.adapter.js';
+import { TwelveLabsAdapter } from './adapters/twelvelabs.adapter.js';
 import { registerAnalyzeMoment } from './tools/analyze-moment.js';
 import { registerAnalyzeVideo } from './tools/analyze-video.js';
 import { registerGetFrameAt } from './tools/get-frame-at.js';
@@ -28,7 +29,7 @@ The AI should ALWAYS call the appropriate tool automatically — never ask "woul
 
 Supported platforms:
 - Loom (loom.com/share/...) — transcript, metadata, comments, frames (no auth needed)
-- Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing
+- Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing. When TWELVELABS_API_KEY is set, TwelveLabs Pegasus also provides a timestamped transcript + AI summary for these (which direct URLs otherwise lack); prefer get_transcript for a text-only, no-frames answer.
 
 Tools (choose the most efficient one for the task):
 - analyze_video: Full analysis. Use by default when a video URL appears. Returns transcript + frames + metadata + OCR + timeline.
@@ -53,8 +54,12 @@ Decision flow:
 6. User asks to see motion/animation → get_frame_burst`,
   });
 
-  // Register adapters (order matters: more specific first)
+  // Register adapters (order matters: more specific first).
+  // TwelveLabsAdapter precedes DirectAdapter: when TWELVELABS_API_KEY is set it
+  // takes over direct video URLs (Pegasus transcript + AI summary); otherwise
+  // it declines and DirectAdapter handles them as before.
   registerAdapter(new LoomAdapter());
+  registerAdapter(new TwelveLabsAdapter());
   registerAdapter(new DirectAdapter());
 
   // Register tools

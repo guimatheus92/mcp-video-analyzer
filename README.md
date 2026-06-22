@@ -176,6 +176,15 @@ Results are cached in memory for 10 minutes. Subsequent calls with the same URL 
 |----------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes | None |
 | **Direct URL** (.mp4, .webm) | No | Duration only | No | Yes | None |
+| **Direct URL + TwelveLabs** | Yes (Pegasus ASR) | Title only | No | Yes | `TWELVELABS_API_KEY` |
+
+### TwelveLabs Pegasus (optional)
+
+Set the `TWELVELABS_API_KEY` environment variable to analyze direct video URLs with [TwelveLabs](https://twelvelabs.io) **Pegasus**. Pegasus analyzes the video server-side (visuals **and** its own audio ASR) and returns a timestamped transcript plus an AI summary as text — capabilities the `DirectAdapter` can't provide (a raw `.mp4` URL has no transcript or summary on its own), and with **no Whisper key required**.
+
+The biggest win is on the text-only paths: `get_transcript` and `get_metadata` now return a real Pegasus transcript and summary for direct URLs — a few KB of text, no frame images, no per-frame token cost. `analyze_video` at `detail: "standard"`/`"detailed"` still extracts frames in addition (use `detail: "brief"` or `skipFrames: true` to stay text-only).
+
+It's fully opt-in and non-breaking: when `TWELVELABS_API_KEY` is set the `TwelveLabsAdapter` handles direct video URLs (it registers the public URL with TwelveLabs — no upload); when it's unset, the `DirectAdapter` handles them exactly as before. Loom URLs are unaffected. Get a key at [playground.twelvelabs.io](https://playground.twelvelabs.io).
 
 ### Frame Extraction Strategies
 
@@ -275,6 +284,7 @@ src/
 ├── adapters/                   # Platform-specific logic
 │   ├── adapter.interface.ts    # IVideoAdapter interface + registry
 │   ├── loom.adapter.ts         # Loom: authless GraphQL
+│   ├── twelvelabs.adapter.ts   # TwelveLabs Pegasus: transcript + AI summary (opt-in)
 │   └── direct.adapter.ts       # Direct URL: any mp4/webm link
 ├── processors/                 # Shared processing
 │   ├── frame-extractor.ts      # ffmpeg scene detection + dense + burst extraction
