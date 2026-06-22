@@ -9,6 +9,10 @@ dist/
 .env.*
 !.env.example
 
+# npm auth + pack artifacts (never commit tokens)
+.npmrc
+*.tgz
+
 # IDE
 .idea/
 .vscode/
