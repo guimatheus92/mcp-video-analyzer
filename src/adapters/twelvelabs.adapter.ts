@@ -267,9 +267,13 @@ export class TwelveLabsAdapter implements IVideoAdapter {
     // De-dupe only the in-flight request: getTranscript + getAiSummary called
     // together share one round-trip, but the entry is evicted once it settles so
     // later calls re-analyze (no stale results, defers freshness to the caller).
-    void pending.finally(() => {
+    // `then(evict, evict)` (not `finally`) keeps this bookkeeping from surfacing
+    // as an unhandled rejection — consumers await `pending` directly and handle
+    // failures (getTranscript → [], getAiSummary → null) themselves.
+    const evict = (): void => {
       if (this.cache.get(url) === pending) this.cache.delete(url);
-    });
+    };
+    void pending.then(evict, evict);
     return pending;
   }
 
