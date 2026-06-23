@@ -1,6 +1,8 @@
 import { execFile as execFileCb } from 'node:child_process';
+import { readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { basename, delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
 import { formatTimestamp } from './frame-extractor.js';
@@ -47,8 +49,10 @@ export async function extractAudioTrack(videoPath: string, outputDir: string): P
  * Transcribe an audio file using the best available strategy.
  *
  * Strategy chain (graceful fallback):
- * 1. @huggingface/transformers (whisper-tiny, JS-native, zero external deps)
- * 2. whisper CLI (requires Python + whisper installed globally)
+ * 1. @huggingface/transformers (JS-native, zero external deps;
+ *    model via WHISPER_HF_MODEL, default Xenova/whisper-tiny)
+ * 2. whisper CLI (requires Python + whisper installed globally;
+ *    model via WHISPER_MODEL, language via WHISPER_LANGUAGE)
  * 3. OpenAI Whisper API (requires OPENAI_API_KEY env var)
  * 4. Returns [] if nothing is available
  */
@@ -75,7 +79,8 @@ async function transcribeWithHuggingFace(audioPath: string): Promise<ITranscript
 
   try {
     const { pipeline } = transformers;
-    const transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny', {
+    const hfModel = process.env.WHISPER_HF_MODEL || 'Xenova/whisper-tiny';
+    const transcriber = await pipeline('automatic-speech-recognition', hfModel, {
       return_timestamps: true,
     });
 
@@ -114,39 +119,72 @@ async function transcribeWithHuggingFace(audioPath: string): Promise<ITranscript
   }
 }
 
+/**
+ * Build the argument list for the `whisper` CLI.
+ *
+ * Model defaults to `tiny` but can be overridden with WHISPER_MODEL (e.g. `small`,
+ * `medium` for much better non-English accuracy). WHISPER_LANGUAGE forces a language
+ * (e.g. `pt`) instead of relying on auto-detection.
+ */
+export function buildWhisperCliArgs(audioPath: string, outputDir: string): string[] {
+  const model = process.env.WHISPER_MODEL || 'tiny';
+  const args = [audioPath, '--output_format', 'json', '--model', model, '--output_dir', outputDir];
+
+  const language = process.env.WHISPER_LANGUAGE;
+  if (language) {
+    args.push('--language', language);
+  }
+
+  return args;
+}
+
+/**
+ * Parse the JSON Whisper writes with `--output_format json` into transcript
+ * entries. Exported for testing. Returns null when there are no usable segments.
+ */
+export function parseWhisperJson(raw: string): ITranscriptEntry[] | null {
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+
+  if (!Array.isArray(parsed['segments'])) return null;
+
+  return (parsed['segments'] as Record<string, unknown>[])
+    .filter((seg) => typeof seg['text'] === 'string' && (seg['text'] as string).trim().length > 0)
+    .map((seg) => ({
+      time: formatTimestamp(Math.round((seg['start'] as number) ?? 0)),
+      text: (seg['text'] as string).trim(),
+    }));
+}
+
 async function transcribeWithWhisperCli(audioPath: string): Promise<ITranscriptEntry[] | null> {
   const whisperCmd = await findWhisperCommand();
   if (!whisperCmd) return null;
 
+  const outputDir = tmpdir();
+  // whisper writes the transcript to <outputDir>/<base>.json — not to stdout.
+  const jsonPath = join(outputDir, `${basename(audioPath, extname(audioPath))}.json`);
+
   try {
-    const { stdout } = await execFile(
-      whisperCmd,
-      [audioPath, '--output_format', 'json', '--model', 'tiny', '--output_dir', '/tmp'],
-      { timeout: 300000 },
-    );
-
-    // Parse whisper JSON output
-    try {
-      const parsed = JSON.parse(stdout);
-      if (Array.isArray(parsed.segments)) {
-        return (
-          parsed.segments
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .filter((seg: any) => typeof seg.text === 'string' && seg.text.trim().length > 0)
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            .map((seg: any) => ({
-              time: formatTimestamp(Math.round(seg.start ?? 0)),
-              text: seg.text.trim(),
-            }))
-        );
-      }
-    } catch {
-      // stdout wasn't JSON; ignore
-    }
-
-    return null;
+    // whisper (Python) shells out to `ffmpeg` to decode audio. Put the bundled
+    // ffmpeg-static binary on PATH so no system ffmpeg install is required.
+    const env = {
+      ...process.env,
+      PATH: `${dirname(ffmpegPath)}${delimiter}${process.env.PATH ?? ''}`,
+    };
+    await execFile(whisperCmd, buildWhisperCliArgs(audioPath, outputDir), {
+      timeout: 300000,
+      env,
+    });
+    return parseWhisperJson(await readFile(jsonPath, 'utf-8'));
   } catch {
     return null;
+  } finally {
+    // Best-effort cleanup of the temp transcript file.
+    await rm(jsonPath, { force: true }).catch(() => undefined);
   }
 }
 
@@ -155,7 +193,6 @@ async function transcribeWithOpenAiApi(audioPath: string): Promise<ITranscriptEn
   if (!apiKey) return null;
 
   try {
-    const { readFile } = await import('node:fs/promises');
     const audioBuffer = await readFile(audioPath);
     const blob = new Blob([audioBuffer], { type: 'audio/wav' });
 
@@ -197,11 +234,21 @@ async function transcribeWithOpenAiApi(audioPath: string): Promise<ITranscriptEn
   }
 }
 
+/**
+ * Locate a usable `whisper` executable. WHISPER_BIN can point at an explicit
+ * path (useful on Windows, where the Python Scripts dir is often not on the
+ * PATH that GUI-launched processes inherit). Otherwise falls back to `whisper`
+ * on PATH.
+ */
 async function findWhisperCommand(): Promise<string | null> {
-  for (const cmd of ['whisper', 'python -m whisper']) {
+  const candidates = [process.env.WHISPER_BIN, 'whisper'].filter(
+    (c): c is string => typeof c === 'string' && c.length > 0,
+  );
+
+  for (const cmd of candidates) {
     try {
-      await execFile(cmd.split(' ')[0], [...cmd.split(' ').slice(1), '--help'], { timeout: 5000 });
-      return cmd.split(' ')[0];
+      await execFile(cmd, ['--help'], { timeout: 5000 });
+      return cmd;
     } catch {
       continue;
     }

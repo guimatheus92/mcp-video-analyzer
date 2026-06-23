@@ -186,6 +186,26 @@ Results are cached in memory for 10 minutes. Subsequent calls with the same URL 
 >
 > **Recognized extensions** (local files and direct URLs): `.mp4` `.mov` `.mkv` `.webm` `.avi` `.m4v` `.wmv` `.flv` `.mpeg` `.mpg` `.m2ts` `.mts` `.3gp` `.ogv`. The extension only gates routing — ffmpeg does the actual demuxing, so most common containers work. `.ts` is excluded to avoid colliding with TypeScript source files.
 
+### Transcription (Whisper fallback)
+
+When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded subtitles), the audio track is transcribed with Whisper via a graceful fallback chain:
+
+1. **@huggingface/transformers** (JS-native, zero external deps) — optional dependency; model via `WHISPER_HF_MODEL`.
+2. **`whisper` CLI** — used when a `whisper` executable is found (`pip install -U openai-whisper`). Point `WHISPER_BIN` at the executable if it isn't on `PATH`. Model via `WHISPER_MODEL`, language via `WHISPER_LANGUAGE`. The bundled `ffmpeg-static` is put on the CLI's `PATH` automatically, so no system ffmpeg is required.
+3. **OpenAI Whisper API** — used when `OPENAI_API_KEY` is set.
+
+| Env var | Applies to | Default | Example |
+|---------|-----------|---------|---------|
+| `WHISPER_MODEL` | `whisper` CLI | `tiny` | `small`, `medium` |
+| `WHISPER_LANGUAGE` | `whisper` CLI | auto-detect | `pt`, `en`, `es` |
+| `WHISPER_BIN` | `whisper` CLI | `whisper` (on PATH) | `C:/.../Scripts/whisper.exe` |
+| `WHISPER_HF_MODEL` | HF transformers | `Xenova/whisper-tiny` | `Xenova/whisper-small` |
+| `OPENAI_API_KEY` | OpenAI API | — | `sk-…` |
+
+> The default `tiny` model is fast but weak for non-English audio. For Portuguese (or other non-English) sources, install the CLI and set `WHISPER_MODEL=small` (or `medium`) + `WHISPER_LANGUAGE=pt` for much better accuracy. `faster-whisper` / `whisper-ctranslate2` are drop-in speed upgrades that expose the same `whisper` CLI flags.
+>
+> **Windows note:** pip installs `whisper.exe` into the Python `Scripts/` dir, which is often **not** on the `PATH` that GUI-launched MCP clients inherit. If transcripts come back empty, set `WHISPER_BIN` to the full path of `whisper.exe`.
+
 ### Frame Extraction Strategies
 
 Frame extraction uses a two-strategy fallback chain — no single dependency is required:
