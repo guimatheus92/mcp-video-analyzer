@@ -1,5 +1,7 @@
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { detectPlatform, extractLoomId } from './url-detector.js';
+import { detectPlatform, extractLoomId, isVideoSource, toLocalPath } from './url-detector.js';
 
 describe('detectPlatform', () => {
   it('detects Loom share URLs', () => {
@@ -42,6 +44,17 @@ describe('detectPlatform', () => {
     expect(detectPlatform('https://example.com/video.m4v')).toBe('direct');
   });
 
+  it('detects additional direct video container formats', () => {
+    for (const ext of ['wmv', 'flv', 'mpeg', 'mpg', 'm2ts', 'mts', '3gp', 'ogv']) {
+      expect(detectPlatform(`https://example.com/video.${ext}`)).toBe('direct');
+    }
+  });
+
+  it('does not treat .ts (TypeScript) paths as video', () => {
+    expect(detectPlatform('https://example.com/module.ts')).toBeNull();
+    expect(detectPlatform('/Users/me/src/index.ts')).toBeNull();
+  });
+
   it('returns null for YouTube URLs (unsupported in v0.1)', () => {
     expect(detectPlatform('https://www.youtube.com/watch?v=abc123')).toBeNull();
   });
@@ -68,6 +81,92 @@ describe('detectPlatform', () => {
 
   it('handles case-insensitive extensions', () => {
     expect(detectPlatform('https://example.com/VIDEO.MP4')).toBe('direct');
+  });
+
+  it('detects absolute POSIX paths to video files as local', () => {
+    expect(detectPlatform('/Users/me/Movies/clip.mp4')).toBe('local');
+    expect(detectPlatform('/tmp/video.webm')).toBe('local');
+    expect(detectPlatform('/tmp/recording.mkv')).toBe('local');
+    expect(detectPlatform('/tmp/camera.mts')).toBe('local');
+  });
+
+  it('detects file:// URIs as local', () => {
+    // Derive the URI from a real absolute path so it is valid on the host OS —
+    // a hardcoded POSIX `file://` literal throws under fileURLToPath on Windows.
+    expect(detectPlatform(pathToFileURL(resolve('Movies', 'clip.mp4')).href)).toBe('local');
+    expect(detectPlatform(pathToFileURL(resolve('tmp', 'video.mov')).href)).toBe('local');
+  });
+
+  // Windows drive paths are only absolute on win32; guard so the suite stays
+  // green on POSIX CI too.
+  (process.platform === 'win32' ? it : it.skip)('detects Windows drive paths as local', () => {
+    expect(detectPlatform('C:\\Users\\me\\clip.mp4')).toBe('local');
+    expect(detectPlatform('C:\\Users\\me\\notes.txt')).toBeNull();
+  });
+
+  it('returns null for absolute paths that are not video files', () => {
+    expect(detectPlatform('/Users/me/notes.txt')).toBeNull();
+    expect(detectPlatform('/tmp/page.html')).toBeNull();
+  });
+
+  it('returns null for relative paths', () => {
+    expect(detectPlatform('./video.mp4')).toBeNull();
+    expect(detectPlatform('video.mp4')).toBeNull();
+    expect(detectPlatform('../movies/clip.mp4')).toBeNull();
+  });
+});
+
+describe('toLocalPath', () => {
+  it('returns the path unchanged for absolute POSIX paths', () => {
+    expect(toLocalPath('/tmp/video.mp4')).toBe('/tmp/video.mp4');
+  });
+
+  it('converts file:// URIs to fs paths', () => {
+    const abs = resolve('tmp', 'video.mp4');
+    expect(toLocalPath(pathToFileURL(abs).href)).toBe(abs);
+  });
+
+  it('returns null for HTTP URLs', () => {
+    expect(toLocalPath('https://example.com/video.mp4')).toBeNull();
+  });
+
+  it('returns null for relative paths', () => {
+    expect(toLocalPath('./video.mp4')).toBeNull();
+    expect(toLocalPath('video.mp4')).toBeNull();
+  });
+
+  it('returns null for empty string', () => {
+    expect(toLocalPath('')).toBeNull();
+  });
+});
+
+describe('isVideoSource', () => {
+  it('accepts Loom URLs', () => {
+    expect(isVideoSource('https://loom.com/share/abc123')).toBe(true);
+  });
+
+  it('accepts direct video URLs', () => {
+    expect(isVideoSource('https://example.com/video.mp4')).toBe(true);
+  });
+
+  it('accepts absolute paths to video files', () => {
+    expect(isVideoSource('/tmp/video.mp4')).toBe(true);
+  });
+
+  it('accepts file:// URIs to video files', () => {
+    expect(isVideoSource('file:///tmp/video.mp4')).toBe(true);
+  });
+
+  it('rejects relative paths', () => {
+    expect(isVideoSource('./video.mp4')).toBe(false);
+  });
+
+  it('rejects non-video URLs', () => {
+    expect(isVideoSource('https://example.com/page.html')).toBe(false);
+  });
+
+  it('rejects empty string', () => {
+    expect(isVideoSource('')).toBe(false);
   });
 });
 

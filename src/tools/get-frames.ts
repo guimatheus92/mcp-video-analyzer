@@ -13,9 +13,18 @@ import {
 import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
+import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
 
 const GetFramesSchema = z.object({
-  url: z.string().url().describe('Video URL (Loom share link or direct mp4/webm URL)'),
+  url: z
+    .string()
+    .refine(isVideoSource, {
+      message:
+        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+    })
+    .describe(
+      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+    ),
   options: z
     .object({
       maxFrames: z
@@ -52,7 +61,7 @@ Two extraction modes:
 
 Returns optimized, deduplicated JPEG frames.
 
-Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
+Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).`,
     parameters: GetFramesSchema,
     annotations: {
       title: 'Get Frames',
@@ -83,7 +92,7 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
 
       // Get metadata for duration (needed for browser fallback)
       const metadata = await adapter.getMetadata(url).catch(() => ({
-        platform: adapter.name as 'loom' | 'direct' | 'unknown',
+        platform: adapter.name,
         title: 'Unknown',
         duration: 0,
         durationFormatted: '0:00',
@@ -134,8 +143,10 @@ Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).`,
         }
       }
 
-      // Strategy 2: Browser fallback
-      if (frames.length === 0 && metadata.duration > 0) {
+      // Strategy 2: Browser fallback — skipped for local files since
+      // puppeteer.goto() can't load fs paths reliably.
+      const isLocal = toLocalPath(url) !== null;
+      if (frames.length === 0 && !isLocal && metadata.duration > 0) {
         await progress(40, 'Extracting frames via browser fallback...');
         const timestamps = generateTimestamps(metadata.duration, maxFrames);
         frames = await extractBrowserFrames(url, tempDir, { timestamps }).catch((e: unknown) => {

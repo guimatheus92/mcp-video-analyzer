@@ -1,3 +1,9 @@
+/** Video sources the server can detect and route to a dedicated adapter. */
+export type Platform = 'loom' | 'direct' | 'local' | 'twelvelabs';
+
+/** Platform as reported in metadata; `'unknown'` is a fallback sentinel. */
+type MetadataPlatform = Platform | 'unknown';
+
 export interface ITranscriptEntry {
   time: string;
   endTime?: string;
@@ -6,13 +12,23 @@ export interface ITranscriptEntry {
 }
 
 export interface IVideoMetadata {
-  platform: 'loom' | 'direct' | 'twelvelabs' | 'unknown';
+  platform: MetadataPlatform;
   title: string;
   description?: string;
   duration: number;
   durationFormatted: string;
   url: string;
   thumbnailUrl?: string;
+  // Optional fields populated when the source is local and ffmpeg can probe
+  // the file directly. Adapters that don't have this info leave them undefined.
+  width?: number;
+  height?: number;
+  fps?: number;
+  videoCodec?: string;
+  audioCodec?: string;
+  hasAudio?: boolean;
+  creationTime?: string;
+  fileSizeBytes?: number;
 }
 
 export interface IVideoComment {

@@ -6,7 +6,7 @@
 
 Featured in [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process).
 
-MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs. Supports Loom, direct video files (.mp4, .webm), and more.
+MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs and local video files. Supports Loom, direct video URLs (.mp4, .mov, .mkv, .webm, and other common formats), and absolute paths to local video files.
 
 No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does.
 
@@ -170,19 +170,28 @@ For motion, vibration, animations, or fast scrolling — burst mode captures N f
 
 Results are cached in memory for 10 minutes. Subsequent calls with the same URL and options return instantly. Use `forceRefresh: true` to bypass the cache.
 
-## Supported Platforms
+## Supported Sources
 
-| Platform | Transcript | Metadata | Comments | Frames | Auth |
-|----------|:----------:|:--------:|:--------:|:------:|:----:|
+| Source | Transcript | Metadata | Comments | Frames | Auth |
+|--------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes | None |
-| **Direct URL** (.mp4, .webm) | No | Duration only | No | Yes | None |
+| **Direct URL** (.mp4, .mov, .mkv, .webm, …) | No | Duration only | No | Yes | None |
 | **Direct URL + TwelveLabs** | Yes (Pegasus ASR) | Title only | No | Yes | `TWELVELABS_API_KEY` |
+| **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
+
+> **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
+>
+> **Sidecar transcripts**: if a `clip.vtt`, `clip.srt`, `clip.en.vtt`, etc. lives next to `clip.mp4`, it's used as the transcript automatically — no Whisper roundtrip needed. SRT is converted to VTT in-memory.
+>
+> **Embedded subtitles**: if no sidecar is found and the container has an embedded subtitle stream (common in `.mkv` / `.mov` / `.mp4` from screen recorders), it's transmuxed to VTT via ffmpeg and used as the transcript.
+>
+> **Recognized extensions** (local files and direct URLs): `.mp4` `.mov` `.mkv` `.webm` `.avi` `.m4v` `.wmv` `.flv` `.mpeg` `.mpg` `.m2ts` `.mts` `.3gp` `.ogv`. The extension only gates routing — ffmpeg does the actual demuxing, so most common containers work. `.ts` is excluded to avoid colliding with TypeScript source files.
 
 ### TwelveLabs Pegasus (optional)
 
 Set the `TWELVELABS_API_KEY` environment variable to analyze direct video URLs with [TwelveLabs](https://twelvelabs.io) **Pegasus**. Pegasus analyzes the video server-side (visuals **and** its own audio ASR) and returns a timestamped transcript plus an AI summary as text — capabilities the `DirectAdapter` can't provide (a raw `.mp4` URL has no transcript or summary on its own), and with **no Whisper key required**.
 
-The biggest win is on the text-only paths: `get_transcript` and `get_metadata` now return a real Pegasus transcript and summary for direct URLs — a few KB of text, no frame images, no per-frame token cost. `analyze_video` at `detail: "standard"`/`"detailed"` still extracts frames in addition (use `detail: "brief"` or `skipFrames: true` to stay text-only).
+The biggest win is on the text-only paths: `get_transcript` and `get_metadata` now return a real Pegasus transcript and summary for direct URLs — a few KB of text, no frame images, no per-frame token cost. `analyze_video` at `detail: "standard"`/`"detailed"` still extracts frames in addition (use `detail: "brief"` to stay text-only).
 
 It's fully opt-in and non-breaking: when `TWELVELABS_API_KEY` is set the `TwelveLabsAdapter` handles direct video URLs (it registers the public URL with TwelveLabs — no upload); when it's unset, the `DirectAdapter` handles them exactly as before. Loom URLs are unaffected. Get a key at [playground.twelvelabs.io](https://playground.twelvelabs.io).
 
@@ -281,9 +290,11 @@ src/
 │   ├── get-frames.ts           # Frames-only (scene-change or dense)
 │   ├── get-frame-at.ts         # Single frame at timestamp
 │   └── get-frame-burst.ts      # N frames in a time range
-├── adapters/                   # Platform-specific logic
+├── adapters/                   # Source-specific logic
 │   ├── adapter.interface.ts    # IVideoAdapter interface + registry
 │   ├── loom.adapter.ts         # Loom: authless GraphQL
+│   ├── loom.adapter.ts         # Loom: authless GraphQL
+│   ├── local-file.adapter.ts   # Local files: absolute path or file:// URI
 │   ├── twelvelabs.adapter.ts   # TwelveLabs Pegasus: transcript + AI summary (opt-in)
 │   └── direct.adapter.ts       # Direct URL: any mp4/webm link
 ├── processors/                 # Shared processing

@@ -7,9 +7,18 @@ import { extractFrameAt, parseTimestamp } from '../processors/frame-extractor.js
 import { optimizeFrame } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir, getTempFilePath } from '../utils/temp-files.js';
+import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
 
 const GetFrameAtSchema = z.object({
-  url: z.string().url().describe('Video URL (Loom share link or direct mp4/webm URL)'),
+  url: z
+    .string()
+    .refine(isVideoSource, {
+      message:
+        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+    })
+    .describe(
+      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+    ),
   timestamp: z
     .string()
     .describe('Timestamp to extract frame at (e.g., "1:23", "0:05", "01:23:45")'),
@@ -28,11 +37,10 @@ export function registerGetFrameAt(server: FastMCP): void {
 Useful for inspecting what's on screen at a particular moment. The AI reads the transcript,
 identifies a critical moment, and requests the exact frame at that timestamp.
 
-Supports: Loom (loom.com/share/...) and direct video URLs (.mp4, .webm, .mov).
-Requires video download capability — direct URLs work best.
+Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
 
 Args:
-  - url: Video URL
+  - url: Video source (URL or local path)
   - timestamp: Time position (e.g., "1:23", "0:05", "01:23:45")
 
 Returns: A single image of the video frame at the specified timestamp.`,
@@ -76,7 +84,14 @@ Returns: A single image of the video frame at the specified timestamp.`,
         }
       }
 
-      // Strategy 2: Browser-based extraction (fallback)
+      // Strategy 2: Browser-based extraction (fallback) — not applicable to
+      // local files (puppeteer.goto() can't load fs paths reliably).
+      if (toLocalPath(url) !== null) {
+        throw new UserError(
+          'Failed to extract frame from local video. Install ffmpeg or check that the file is a valid video.',
+        );
+      }
+
       await progress(30, 'Extracting frame via browser fallback...');
       const seconds = parseTimestamp(timestamp);
       const browserFrames = await extractBrowserFrames(url, tempDir, {

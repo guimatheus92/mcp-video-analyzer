@@ -9,7 +9,7 @@ beforeEach(() => {
 
 describe('adapter registry', () => {
   it('throws UserError for unsupported URLs when no adapters registered', () => {
-    expect(() => getAdapter('https://example.com')).toThrow('Unsupported video URL');
+    expect(() => getAdapter('https://example.com')).toThrow('Unsupported video source');
   });
 
   it('returns Loom adapter for loom.com URLs', () => {
@@ -32,7 +32,7 @@ describe('adapter registry', () => {
     registerAdapter(new LoomAdapter());
     registerAdapter(new DirectAdapter());
 
-    expect(() => getAdapter('https://example.com/page')).toThrow('Unsupported video URL');
+    expect(() => getAdapter('https://example.com/page')).toThrow('Unsupported video source');
   });
 
   it('returns first matching adapter (Loom before Direct)', () => {

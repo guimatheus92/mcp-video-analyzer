@@ -5,10 +5,11 @@ import type {
   ITranscriptEntry,
   IVideoComment,
   IVideoMetadata,
+  Platform,
 } from '../types.js';
 
 export interface IVideoAdapter {
-  readonly name: string;
+  readonly name: Platform;
   readonly capabilities: IAdapterCapabilities;
 
   canHandle(url: string): boolean;
@@ -33,7 +34,7 @@ export function getAdapter(url: string): IVideoAdapter {
     }
   }
   throw new UserError(
-    `Unsupported video URL: "${url}". Supported platforms: Loom (loom.com/share/...), direct video files (.mp4, .webm, .mov).`,
+    `Unsupported video source: "${url}". Supported: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and absolute local paths or file:// URIs to video files.`,
   );
 }
 
