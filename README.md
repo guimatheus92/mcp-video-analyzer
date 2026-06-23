@@ -195,6 +195,26 @@ The biggest win is on the text-only paths: `get_transcript` and `get_metadata` n
 
 It's fully opt-in and non-breaking: when `TWELVELABS_API_KEY` is set the `TwelveLabsAdapter` handles direct video URLs (it registers the public URL with TwelveLabs — no upload); when it's unset, the `DirectAdapter` handles them exactly as before. Loom URLs are unaffected. Get a key at [playground.twelvelabs.io](https://playground.twelvelabs.io).
 
+### Transcription (Whisper fallback)
+
+When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded subtitles), the audio track is transcribed with Whisper via a graceful fallback chain:
+
+1. **@huggingface/transformers** (JS-native, zero external deps) — optional dependency; model via `WHISPER_HF_MODEL`.
+2. **`whisper` CLI** — used when a `whisper` executable is found (`pip install -U openai-whisper`). Point `WHISPER_BIN` at the executable if it isn't on `PATH`. Model via `WHISPER_MODEL`, language via `WHISPER_LANGUAGE`. The bundled `ffmpeg-static` is put on the CLI's `PATH` automatically, so no system ffmpeg is required.
+3. **OpenAI Whisper API** — used when `OPENAI_API_KEY` is set.
+
+| Env var | Applies to | Default | Example |
+|---------|-----------|---------|---------|
+| `WHISPER_MODEL` | `whisper` CLI | `tiny` | `small`, `medium` |
+| `WHISPER_LANGUAGE` | `whisper` CLI | auto-detect | `pt`, `en`, `es` |
+| `WHISPER_BIN` | `whisper` CLI | `whisper` (on PATH) | `C:/.../Scripts/whisper.exe` |
+| `WHISPER_HF_MODEL` | HF transformers | `Xenova/whisper-tiny` | `Xenova/whisper-small` |
+| `OPENAI_API_KEY` | OpenAI API | — | `sk-…` |
+
+> The default `tiny` model is fast but weak for non-English audio. For Portuguese (or other non-English) sources, install the CLI and set `WHISPER_MODEL=small` (or `medium`) + `WHISPER_LANGUAGE=pt` for much better accuracy. `faster-whisper` / `whisper-ctranslate2` are drop-in speed upgrades that expose the same `whisper` CLI flags.
+>
+> **Windows note:** pip installs `whisper.exe` into the Python `Scripts/` dir, which is often **not** on the `PATH` that GUI-launched MCP clients inherit. If transcripts come back empty, set `WHISPER_BIN` to the full path of `whisper.exe`.
+
 ### Frame Extraction Strategies
 
 Frame extraction uses a two-strategy fallback chain — no single dependency is required:
@@ -292,7 +312,6 @@ src/
 │   └── get-frame-burst.ts      # N frames in a time range
 ├── adapters/                   # Source-specific logic
 │   ├── adapter.interface.ts    # IVideoAdapter interface + registry
-│   ├── loom.adapter.ts         # Loom: authless GraphQL
 │   ├── loom.adapter.ts         # Loom: authless GraphQL
 │   ├── local-file.adapter.ts   # Local files: absolute path or file:// URI
 │   ├── twelvelabs.adapter.ts   # TwelveLabs Pegasus: transcript + AI summary (opt-in)
