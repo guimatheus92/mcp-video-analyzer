@@ -66,7 +66,12 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
           return [];
         }),
         adapter.getChapters(url).catch(() => []),
-        adapter.getAiSummary(url).catch(() => null),
+        adapter.getAiSummary(url).catch((e: unknown) => {
+          warnings.push(
+            `Failed to fetch AI summary: ${e instanceof Error ? e.message : String(e)}`,
+          );
+          return null;
+        }),
       ]);
 
       await progress(100, 'Metadata fetched');

@@ -30,7 +30,7 @@ The AI should ALWAYS call the appropriate tool automatically — never ask "woul
 
 Supported sources:
 - Loom (loom.com/share/...) — transcript, metadata, comments, frames (no auth needed)
-- Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing. When TWELVELABS_API_KEY is set, TwelveLabs Pegasus also provides a timestamped transcript + AI summary for these (which direct URLs otherwise lack); prefer get_transcript for a text-only, no-frames answer.
+- Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing. When TWELVELABS_API_KEY is set, TwelveLabs Pegasus also provides an AI-generated, timestamped transcript (best-effort, not deterministic ASR) + AI summary for these (which direct URLs otherwise lack); prefer get_transcript for a text-only, no-frames answer.
 - Local video files — pass an absolute path (e.g., "/Users/you/clip.mp4") or a file:// URI; frame extraction + Whisper transcription work the same way
 
 Tools (choose the most efficient one for the task):

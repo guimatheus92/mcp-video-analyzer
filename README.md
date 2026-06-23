@@ -176,7 +176,7 @@ Results are cached in memory for 10 minutes. Subsequent calls with the same URL 
 |--------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes | None |
 | **Direct URL** (.mp4, .mov, .mkv, .webm, …) | No | Duration only | No | Yes | None |
-| **Direct URL + TwelveLabs** | Yes (Pegasus ASR) | Title only | No | Yes | `TWELVELABS_API_KEY` |
+| **Direct URL + TwelveLabs** | Yes (Pegasus, best-effort) | Duration floor + title | No | Yes | `TWELVELABS_API_KEY` |
 | **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
 
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
@@ -189,9 +189,13 @@ Results are cached in memory for 10 minutes. Subsequent calls with the same URL 
 
 ### TwelveLabs Pegasus (optional)
 
-Set the `TWELVELABS_API_KEY` environment variable to analyze direct video URLs with [TwelveLabs](https://twelvelabs.io) **Pegasus**. Pegasus analyzes the video server-side (visuals **and** its own audio ASR) and returns a timestamped transcript plus an AI summary as text — capabilities the `DirectAdapter` can't provide (a raw `.mp4` URL has no transcript or summary on its own), and with **no Whisper key required**.
+Set the `TWELVELABS_API_KEY` environment variable to analyze direct video URLs with [TwelveLabs](https://twelvelabs.io) **Pegasus**. Pegasus analyzes the video server-side (visuals **and** its own audio) and returns an **AI-generated, timestamped transcript** plus an AI summary as text — capabilities the `DirectAdapter` can't provide (a raw `.mp4` URL has no transcript or summary on its own), and with **no Whisper key required**.
 
-The biggest win is on the text-only paths: `get_transcript` and `get_metadata` now return a real Pegasus transcript and summary for direct URLs — a few KB of text, no frame images, no per-frame token cost. `analyze_video` at `detail: "standard"`/`"detailed"` still extracts frames in addition (use `detail: "brief"` to stay text-only).
+The transcript is best-effort LLM output, not a deterministic ASR dump: Pegasus is *prompted* to emit `[MM:SS] line` rows, and lines that don't match that shape are dropped, so wording and exact timestamps depend on the model's prompt adherence. Failures (bad key, timeout, API error) surface in the tool's `warnings[]` rather than silently returning an empty transcript.
+
+The biggest win is on the text-only paths: `get_transcript` and `get_metadata` return a Pegasus transcript and summary for direct URLs — a few KB of text, no frame images, no per-frame token cost. `analyze_video` at `detail: "standard"`/`"detailed"` still extracts frames in addition (use `detail: "brief"` to stay text-only).
+
+> **Long videos**: the summary and full transcript share a single capped completion (`max_tokens` = 16384), so for very long videos the transcript may be truncated. For multi-hour content, chunking by time window is the better approach.
 
 It's fully opt-in and non-breaking: when `TWELVELABS_API_KEY` is set the `TwelveLabsAdapter` handles direct video URLs (it registers the public URL with TwelveLabs — no upload); when it's unset, the `DirectAdapter` handles them exactly as before. Loom URLs are unaffected. Get a key at [playground.twelvelabs.io](https://playground.twelvelabs.io).
 

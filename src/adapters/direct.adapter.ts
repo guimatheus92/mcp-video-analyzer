@@ -1,7 +1,3 @@
-import { createWriteStream } from 'node:fs';
-import { join } from 'node:path';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
 import type {
   IAdapterCapabilities,
   IChapter,
@@ -10,21 +6,8 @@ import type {
   IVideoMetadata,
 } from '../types.js';
 import { detectPlatform } from '../utils/url-detector.js';
+import { downloadDirectVideo, getFilenameFromUrl } from '../utils/video-download.js';
 import type { IVideoAdapter } from './adapter.interface.js';
-
-function getFilenameFromUrl(url: string): string {
-  try {
-    const parsed = new URL(url);
-    const segments = parsed.pathname.split('/');
-    const lastSegment = segments[segments.length - 1];
-    if (lastSegment && lastSegment.includes('.')) {
-      return lastSegment;
-    }
-  } catch {
-    // ignore parse errors
-  }
-  return 'video.mp4';
-}
 
 export class DirectAdapter implements IVideoAdapter {
   readonly name = 'direct';
@@ -69,17 +52,6 @@ export class DirectAdapter implements IVideoAdapter {
   }
 
   async downloadVideo(url: string, destDir: string): Promise<string | null> {
-    const filename = getFilenameFromUrl(url);
-    const destPath = join(destDir, filename);
-
-    const response = await fetch(url);
-    if (!response.ok || !response.body) {
-      return null;
-    }
-
-    const nodeStream = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
-    await pipeline(nodeStream, createWriteStream(destPath));
-
-    return destPath;
+    return downloadDirectVideo(url, destDir);
   }
 }
