@@ -1,5 +1,5 @@
 /** Video sources the server can detect and route to a dedicated adapter. */
-export type Platform = 'loom' | 'direct' | 'local';
+export type Platform = 'loom' | 'direct' | 'local' | 'twelvelabs';
 
 /** Platform as reported in metadata; `'unknown'` is a fallback sentinel. */
 type MetadataPlatform = Platform | 'unknown';

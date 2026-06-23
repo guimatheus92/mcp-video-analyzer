@@ -215,7 +215,12 @@ Use options.forceRefresh to bypass the cache.`,
             return [];
           }),
           adapter.getChapters(url).catch(() => []),
-          adapter.getAiSummary(url).catch(() => null),
+          adapter.getAiSummary(url).catch((e: unknown) => {
+            warnings.push(
+              `Failed to fetch AI summary: ${e instanceof Error ? e.message : String(e)}`,
+            );
+            return null;
+          }),
         ]);
 
         await progress(35, 'Metadata and transcript fetched');
