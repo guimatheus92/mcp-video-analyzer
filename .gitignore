@@ -31,6 +31,9 @@ tmp/
 # Coverage
 coverage/
 
+# tesseract.js OCR language data (downloaded to cwd at runtime)
+*.traineddata
+
 # Source maps
 *.js.map
 

@@ -130,3 +130,52 @@ export async function deduplicateFrames(
 
   return result;
 }
+
+function normalizeOcrText(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * Like {@link deduplicateFrames}, but **OCR-text-aware**: a frame survives if it
+ * is visually distinct from the last kept frame *or* its on-screen text differs.
+ *
+ * This is the right dedup for static-background clips whose only change is a text
+ * overlay (Reels/Stories, slides): a coarse perceptual hash barely registers a
+ * small text-region change, so plain visual dedup would silently merge frames
+ * that carry different prices/dates/captions and starve OCR. Truly identical
+ * frames (same visuals *and* same text) are still dropped, preserving token economy.
+ *
+ * @param frames - frames to deduplicate
+ * @param texts - OCR text per frame, aligned by index (use `''` for none/low-confidence)
+ * @param maxDistance - visual Hamming threshold (see {@link deduplicateFrames})
+ * @returns indices of the frames to keep, in order
+ */
+export async function dedupeKeepingTextChanges(
+  frames: IFrameResult[],
+  texts: string[],
+  maxDistance = 5,
+): Promise<number[]> {
+  if (frames.length <= 1) return frames.map((_, i) => i);
+
+  const hashes = await Promise.all(frames.map((f) => computeDHash(f.filePath).catch(() => null)));
+
+  const kept: number[] = [0];
+  let lastHash = hashes[0];
+  let lastText = normalizeOcrText(texts[0] ?? '');
+
+  for (let i = 1; i < frames.length; i++) {
+    const hash = hashes[i];
+    const text = normalizeOcrText(texts[i] ?? '');
+
+    const visuallyDifferent = !hash || !lastHash || hammingDistance(lastHash, hash) > maxDistance;
+    const textChanged = text.length > 0 && text !== lastText;
+
+    if (visuallyDifferent || textChanged) {
+      kept.push(i);
+      lastHash = hash;
+      if (text.length > 0) lastText = text;
+    }
+  }
+
+  return kept;
+}

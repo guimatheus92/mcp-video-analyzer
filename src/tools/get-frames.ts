@@ -5,8 +5,7 @@ import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames, generateTimestamps } from '../processors/browser-frame-extractor.js';
 import { deduplicateFrames, filterBlackFrames } from '../processors/frame-dedup.js';
 import {
-  extractDenseFrames,
-  extractSceneFrames,
+  extractKeyFrames,
   formatTimestamp,
   probeVideoDuration,
 } from '../processors/frame-extractor.js';
@@ -113,21 +112,13 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
             metadata.durationFormatted = formatTimestamp(Math.floor(duration));
           }
 
-          const rawFrames = dense
-            ? await extractDenseFrames(videoPath, tempDir, { maxFrames }).catch((e: unknown) => {
-                warnings.push(
-                  `Dense extraction failed: ${e instanceof Error ? e.message : String(e)}`,
-                );
-                return [];
-              })
-            : await extractSceneFrames(videoPath, tempDir, { threshold, maxFrames }).catch(
-                (e: unknown) => {
-                  warnings.push(
-                    `Scene extraction failed: ${e instanceof Error ? e.message : String(e)}`,
-                  );
-                  return [];
-                },
-              );
+          const extraction = await extractKeyFrames(videoPath, tempDir, {
+            threshold,
+            maxFrames,
+            dense,
+          });
+          const rawFrames = extraction.frames;
+          warnings.push(...extraction.warnings);
 
           if (rawFrames.length > 0) {
             const optimizedPaths = await optimizeFrames(
@@ -183,7 +174,9 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
 
       if (frames.length === 0) {
         throw new UserError(
-          'Could not extract any frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
+          isLocal
+            ? 'Could not extract any frames from this local file — ffmpeg produced no frames (the file may be unreadable, zero-length, or have no decodable video stream).'
+            : 'Could not extract any frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
         );
       }
 

@@ -342,6 +342,63 @@ export async function extractDenseFrames(
   }));
 }
 
+export interface KeyFrameExtraction {
+  frames: IFrameResult[];
+  /** Non-fatal messages to surface to the caller (graceful-degradation pattern). */
+  warnings: string[];
+}
+
+/**
+ * Extract key frames with a robust fallback chain for local files and downloads.
+ *
+ * - `dense: true` → uniform temporal sampling (1 fps, capped at maxFrames).
+ * - otherwise → scene-change detection; **if it yields zero frames** (common for
+ *   static "talking-head" clips, Reels/Stories where only an on-screen text
+ *   overlay changes), fall back to uniform sampling. Uniform sampling is also
+ *   strictly better for OCR of static overlays, so the fallback improves results
+ *   rather than merely avoiding an empty response.
+ *
+ * Never throws: extraction errors degrade to `[]` with a warning, matching the
+ * project's graceful-degradation convention.
+ */
+export async function extractKeyFrames(
+  videoPath: string,
+  outputDir: string,
+  options: { threshold?: number; maxFrames?: number; dense?: boolean } = {},
+): Promise<KeyFrameExtraction> {
+  const { threshold, maxFrames, dense = false } = options;
+  const warnings: string[] = [];
+
+  const dropToWarning = (label: string) => (e: unknown) => {
+    warnings.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    return [] as IFrameResult[];
+  };
+
+  if (dense) {
+    const frames = await extractDenseFrames(videoPath, outputDir, { maxFrames }).catch(
+      dropToWarning('Dense frame extraction failed'),
+    );
+    return { frames, warnings };
+  }
+
+  let frames = await extractSceneFrames(videoPath, outputDir, { threshold, maxFrames }).catch(
+    dropToWarning('Scene frame extraction failed'),
+  );
+
+  if (frames.length === 0) {
+    frames = await extractDenseFrames(videoPath, outputDir, { maxFrames }).catch(
+      dropToWarning('Dense frame extraction failed'),
+    );
+    if (frames.length > 0) {
+      warnings.push(
+        'No scene cuts detected; used uniform temporal sampling (better for static clips and on-screen text OCR).',
+      );
+    }
+  }
+
+  return { frames, warnings };
+}
+
 async function listFrameFiles(dir: string, prefix: string): Promise<string[]> {
   const files = await readdir(dir);
   return files.filter((f) => f.startsWith(prefix) && f.endsWith('.jpg')).sort();

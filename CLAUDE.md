@@ -19,10 +19,10 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 
 ## Architecture
 
-- **Adapters** (`src/adapters/`) — platform-specific logic (Loom GraphQL, direct URL download). Each implements `IVideoAdapter`.
-- **Processors** (`src/processors/`) — shared processing: frame extraction (ffmpeg + browser fallback), image optimization (sharp), frame dedup (dHash), OCR (tesseract.js), annotated timeline.
-- **Tools** (`src/tools/`) — MCP tool definitions registered on the FastMCP server.
-- **Utils** (`src/utils/`) — URL detection, VTT parsing, temp file management.
+- **Adapters** (`src/adapters/`) — platform-specific logic (Loom GraphQL, direct URL download, TwelveLabs, local files). Each implements `IVideoAdapter`.
+- **Processors** (`src/processors/`) — shared processing: frame extraction (ffmpeg + browser fallback), image optimization + OCR preprocessing (sharp), frame dedup (dHash, visual + OCR-text-aware), OCR (tesseract.js), audio transcription (whisper), annotated timeline.
+- **Tools** (`src/tools/`) — MCP tool definitions registered on the FastMCP server. `analyze-core.ts` holds the shared cache + pipeline (`getAnalysis`) + content builder reused by both `analyze_video` and the batch `analyze_videos`.
+- **Utils** (`src/utils/`) — URL detection, VTT parsing, temp files, in-memory + on-disk cache (`cache.ts`, `analysis-sidecar.ts`), bounded concurrency (`concurrency.ts`), env-flag parsing (`env.ts`).
 
 ## Conventions
 
@@ -36,7 +36,18 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - Three-strategy video download: yt-dlp (primary) → direct HTTP via Loom CDN API (fallback) → headless Chrome screenshots (last resort).
 - Frame extraction uses bundled `ffmpeg-static` — no system ffmpeg needed.
 - Black frame detection filters out DRM-protected/blank frames automatically.
-- Scene detection threshold default: 0.1 (optimized for screencasts/demos).
+- Scene detection threshold default: 0.1 (optimized for screencasts/demos). Use `extractKeyFrames()` (not raw `extractSceneFrames`) so static clips with no scene cuts fall back to uniform temporal sampling — critical for talking-head Reels/Stories.
+- OCR runs on every frame *before* dedup; when OCR is enabled, dedup uses `dedupeKeepingTextChanges()` (visual + on-screen-text aware) so frames whose only change is the text overlay survive. Plain `deduplicateFrames()` (visual only) is used when OCR is off.
+- OCR frames are preprocessed (grayscale + 2× upscale + contrast normalization) by default; `MCP_OCR_PREPROCESS=0` disables.
+- Transcription strategy order: whisper CLI → OpenAI API → HF transformers. HF is **opt-in** (only runs when `WHISPER_HF_MODEL` is set) so it never silently overrides CLI model/language settings. `model`/`language`/`initialPrompt` are overridable per call on `analyze_video`/`analyze_videos`/`get_transcript`.
+- Persistent sidecars (`MCP_WRITE_SIDECARS=1`) write `<stem>.vtt` (Whisper transcripts only, never clobbering an existing one) + `<stem>.analysis.json` + `<stem>.frames/` next to local videos for resumable bulk processing; reads validate `mtime:size` + params.
+
+## Environment Variables
+
+- **Transcription:** `WHISPER_MODEL`, `WHISPER_LANGUAGE`, `WHISPER_PROMPT` (glossary → `--initial_prompt`), `WHISPER_BIN`, `WHISPER_DEVICE`/`WHISPER_COMPUTE`/`WHISPER_BEAM_SIZE`/`WHISPER_WORD_TIMESTAMPS` (env-gated — only passed to the CLI when set, so `openai-whisper` isn't broken by `whisper-ctranslate2`-only flags), `WHISPER_HF_MODEL` (opt-in), `OPENAI_API_KEY`.
+- **OCR:** `MCP_OCR_PREPROCESS` (default on; `0` to disable preprocessing).
+- **Sidecars:** `MCP_WRITE_SIDECARS` (default off; `1` to persist resumable sidecars next to local videos).
+- **TwelveLabs:** `TWELVELABS_API_KEY` (opt-in Pegasus transcript/summary for direct URLs).
 
 ## Publishing
 

@@ -7,6 +7,7 @@ import { createTestImage } from '../../test/helpers/index.js';
 import type { IFrameResult } from '../types.js';
 import {
   computeDHash,
+  dedupeKeepingTextChanges,
   deduplicateFrames,
   filterBlackFrames,
   hammingDistance,
@@ -121,6 +122,51 @@ describe('frame-dedup', () => {
 
       const result = await deduplicateFrames(frames);
       expect(result).toHaveLength(1); // All identical → keep first only
+    });
+  });
+
+  describe('dedupeKeepingTextChanges', () => {
+    it('keeps visually-identical frames when their OCR text differs', async () => {
+      // Same solid color (visually identical → Hamming 0), but the on-screen
+      // text changes across frames — the user's static-Reel case.
+      const dir = await mkdtemp(join(tmpdir(), 'dedup-text-'));
+      const p1 = await createTestImage(dir, 'a.jpg', { color: { r: 120, g: 120, b: 120 } });
+      const p2 = await createTestImage(dir, 'b.jpg', { color: { r: 120, g: 120, b: 120 } });
+      const p3 = await createTestImage(dir, 'c.jpg', { color: { r: 120, g: 120, b: 120 } });
+
+      const frames: IFrameResult[] = [
+        { time: '0:01', filePath: p1, mimeType: 'image/jpeg' },
+        { time: '0:02', filePath: p2, mimeType: 'image/jpeg' },
+        { time: '0:03', filePath: p3, mimeType: 'image/jpeg' },
+      ];
+
+      const keep = await dedupeKeepingTextChanges(frames, ['R$ 99', 'R$ 99', 'R$ 49']);
+      // Frame 2 (same text + same visuals) is dropped; frame 3 (new text) survives.
+      expect(keep).toEqual([0, 2]);
+    });
+
+    it('drops frames identical in both visuals and text', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'dedup-text-'));
+      const p1 = await createTestImage(dir, 'a.jpg', { color: { r: 80, g: 80, b: 80 } });
+      const p2 = await createTestImage(dir, 'b.jpg', { color: { r: 80, g: 80, b: 80 } });
+
+      const frames: IFrameResult[] = [
+        { time: '0:01', filePath: p1, mimeType: 'image/jpeg' },
+        { time: '0:02', filePath: p2, mimeType: 'image/jpeg' },
+      ];
+
+      const keep = await dedupeKeepingTextChanges(frames, ['same', 'same']);
+      expect(keep).toEqual([0]);
+    });
+
+    it('returns all indices for 0 or 1 frame', async () => {
+      expect(await dedupeKeepingTextChanges([], [])).toEqual([]);
+      expect(
+        await dedupeKeepingTextChanges(
+          [{ time: '0:01', filePath: '/fake.jpg', mimeType: 'image/jpeg' }],
+          [''],
+        ),
+      ).toEqual([0]);
     });
   });
 
