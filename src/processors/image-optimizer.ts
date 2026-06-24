@@ -22,12 +22,13 @@ export async function optimizeFrame(
 }
 
 /**
- * Produce an OCR-optimized copy of a frame: grayscale, 2× upscale, and contrast
- * normalization. These three steps reliably lift Tesseract accuracy on stylized
- * on-screen text (prices, dates, coupons, CTAs — common in Reels/Stories)
- * without the over-aggressive hard binarization that destroys thin text laid
- * over photos. Tesseract applies its own Otsu thresholding internally, so we
- * deliberately stop short of a manual threshold. Returns the output path.
+ * Produce an OCR-optimized copy of a frame: grayscale, 2× upscale, contrast
+ * normalization, and a mild sharpen. These steps reliably lift Tesseract
+ * accuracy on stylized on-screen text (prices, dates, coupons, CTAs — common in
+ * Reels/Stories) without the over-aggressive hard binarization that destroys
+ * thin text laid over photos. Tesseract applies its own Otsu thresholding
+ * internally, so we deliberately stop short of a manual threshold. Returns the
+ * output path.
  */
 export async function preprocessForOcr(inputPath: string, outputPath: string): Promise<string> {
   const meta = await sharp(inputPath).metadata();

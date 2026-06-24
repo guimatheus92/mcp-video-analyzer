@@ -1,12 +1,13 @@
 import { rm } from 'node:fs/promises';
-import type { IFrameResult } from '../types.js';
+import type { IFrameResult, IOcrEntry } from '../types.js';
 import { preprocessForOcr } from './image-optimizer.js';
 
-export interface IOcrResult {
-  time: string;
-  text: string;
-  confidence: number;
-}
+/**
+ * OCR result for a single frame. Alias of the canonical {@link IOcrEntry} in
+ * types.ts — kept as a named export for the OCR module's API while remaining a
+ * single source of truth for the shape.
+ */
+export type IOcrResult = IOcrEntry;
 
 /** Derive the temp path for a frame's OCR-preprocessed copy (lossless PNG). */
 function ocrPreprocessPath(framePath: string): string {

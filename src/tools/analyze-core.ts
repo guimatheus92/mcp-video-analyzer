@@ -22,6 +22,7 @@ import type { IOcrResult } from '../processors/frame-ocr.js';
 import { optimizeFrames } from '../processors/image-optimizer.js';
 import type { IAnalysisResult, IVideoMetadata } from '../types.js';
 import { readAnalysisSidecar, writeAnalysisSidecars } from '../utils/analysis-sidecar.js';
+import type { ResultDefiningParams } from '../utils/analysis-sidecar.js';
 import { AnalysisCache, cacheKey } from '../utils/cache.js';
 import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
@@ -55,24 +56,16 @@ export const AnalyzeOptionsSchema = z
       .number()
       .min(0)
       .max(1)
-      .default(0.1)
       .optional()
       .describe(
         'Scene-change sensitivity 0.0-1.0 (lower = more frames, default: 0.1). Use 0.1 for screencasts/demos, 0.3 for live-action video.',
       ),
-    returnBase64: z
-      .boolean()
-      .default(false)
-      .optional()
-      .describe('Return frames as base64 inline instead of file paths'),
     skipFrames: z
       .boolean()
-      .default(false)
       .optional()
       .describe('Skip frame extraction (transcript + metadata only)'),
     detail: z
       .enum(['brief', 'standard', 'detailed'])
-      .default('standard')
       .optional()
       .describe(
         'Analysis depth: "brief" (metadata + truncated transcript, no frames), "standard" (default), "detailed" (dense sampling, more frames)',
@@ -83,11 +76,7 @@ export const AnalyzeOptionsSchema = z
       .describe(
         'Specific fields to return (default: all). E.g., ["metadata", "transcript"] returns only those fields.',
       ),
-    forceRefresh: z
-      .boolean()
-      .default(false)
-      .optional()
-      .describe('Bypass cache and re-analyze the video'),
+    forceRefresh: z.boolean().optional().describe('Bypass cache and re-analyze the video'),
     ocrLanguage: z
       .string()
       .optional()
@@ -146,7 +135,7 @@ export function resolveAnalyzeParams(options: AnalyzeOptions): AnalyzeParams {
 }
 
 /** Params that affect the result — used for both cache key and sidecar validity. */
-function resultDefiningParams(params: AnalyzeParams): Record<string, unknown> {
+function resultDefiningParams(params: AnalyzeParams): ResultDefiningParams {
   return {
     detail: params.detail,
     maxFrames: params.maxFrames,
@@ -172,7 +161,7 @@ async function runAnalysisPipeline(
   url: string,
   params: AnalyzeParams,
   progress: ProgressReporter,
-): Promise<{ result: IAnalysisResult; transcriptFromWhisper: boolean }> {
+): Promise<{ result: IAnalysisResult; transcriptFromWhisper: boolean; tempDir: string | null }> {
   const adapter = getAdapter(url);
   const config = getDetailConfig(params.detail);
   const { maxFrames, threshold, skipFrames, ocrLanguage } = params;
@@ -203,7 +192,10 @@ async function runAnalysisPipeline(
         warnings.push(`Failed to fetch comments: ${e instanceof Error ? e.message : String(e)}`);
         return [];
       }),
-      adapter.getChapters(url).catch(() => []),
+      adapter.getChapters(url).catch((e: unknown) => {
+        warnings.push(`Failed to fetch chapters: ${e instanceof Error ? e.message : String(e)}`);
+        return [];
+      }),
       adapter.getAiSummary(url).catch((e: unknown) => {
         warnings.push(`Failed to fetch AI summary: ${e instanceof Error ? e.message : String(e)}`);
         return null;
@@ -334,7 +326,7 @@ async function runAnalysisPipeline(
           await progress(82, `Running OCR on ${result.frames.length} frames...`);
           const perFrame = await ocrFrames(result.frames, ocrLanguage, (completed, total) => {
             const pct = 82 + Math.round((completed / total) * 9);
-            progress(pct, `OCR: processing frame ${completed}/${total}...`);
+            void progress(pct, `OCR: processing frame ${completed}/${total}...`);
           }).catch((e: unknown): IOcrResult[] => {
             warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
             return [];
@@ -346,15 +338,27 @@ async function runAnalysisPipeline(
             const texts = perFrame.map((r) => (isMeaningfulOcr(r) ? r.text : ''));
             const keep = await dedupeKeepingTextChanges(result.frames, texts).catch(() => null);
             if (keep) {
+              // Realign frames and OCR by kept index. `ocrResults` is then a
+              // *time-keyed, sparse* subset (low-confidence entries dropped), NOT
+              // index-aligned to `frames` — downstream consumers must key by time.
               const framesBefore = result.frames;
-              result.frames = keep.map((i) => framesBefore[i]);
-              result.ocrResults = keep.map((i) => perFrame[i]).filter(isMeaningfulOcr);
+              const perFrameBefore = perFrame;
+              const keptValid = keep.filter((i) => framesBefore[i] !== undefined);
+              result.frames = keptValid.map((i) => framesBefore[i]);
+              result.ocrResults = keptValid.map((i) => perFrameBefore[i]).filter(isMeaningfulOcr);
             } else {
               result.ocrResults = perFrame.filter(isMeaningfulOcr);
             }
           } else {
-            // OCR unavailable or misaligned — fall back to visual-only dedup.
-            result.frames = await deduplicateFrames(result.frames).catch(() => result.frames);
+            // OCR engine unavailable or returned a misaligned result — degrade to
+            // visual-only dedup, but say so rather than silently skipping OCR.
+            warnings.push(
+              `OCR produced ${perFrame.length}/${result.frames.length} results (tesseract.js unavailable or recognition aborted); used visual-only dedup and skipped OCR text.`,
+            );
+            result.frames = await deduplicateFrames(result.frames).catch((e: unknown) => {
+              warnings.push(`Frame dedup failed: ${e instanceof Error ? e.message : String(e)}`);
+              return result.frames;
+            });
           }
         } else {
           result.frames = await deduplicateFrames(result.frames).catch((e: unknown) => {
@@ -390,7 +394,9 @@ async function runAnalysisPipeline(
     if (result.transcript.length === 0 && videoPath && metadata.hasAudio !== false) {
       try {
         const audioPath = await extractAudioTrack(videoPath, tempDir ?? '');
-        const whisperTranscript = await transcribeAudio(audioPath, params.transcribe);
+        const whisperTranscript = await transcribeAudio(audioPath, params.transcribe, (w) =>
+          warnings.push(w),
+        );
         if (whisperTranscript.length > 0) {
           result.transcript = whisperTranscript;
           transcriptFromWhisper = true;
@@ -413,52 +419,91 @@ async function runAnalysisPipeline(
 
     await progress(100, 'Analysis complete');
 
-    return { result, transcriptFromWhisper };
-  } finally {
-    // Frames live in tempDir and must survive for imageContent; only clean up
-    // when no frames were requested (matches the original lifecycle).
+    // Frames live in tempDir and must survive for imageContent; the caller owns
+    // cleanup via the handle returned by getAnalysis. When no frames were kept
+    // (skipFrames), nothing reads tempDir afterward, so clean it eagerly here.
     if (tempDir && skipFrames) {
       await cleanupTempDir(tempDir).catch(() => undefined);
+      tempDir = null;
     }
+
+    return { result, transcriptFromWhisper, tempDir };
+  } catch (err) {
+    // On a hard failure the caller never receives a cleanup handle, so reclaim
+    // the temp dir here to avoid leaking it.
+    if (tempDir) await cleanupTempDir(tempDir).catch(() => undefined);
+    throw err;
   }
+}
+
+const noopCleanup = async (): Promise<void> => undefined;
+
+/** An analysis result plus a handle to release any temp files it still holds. */
+export interface AnalysisHandle {
+  result: IAnalysisResult;
+  /**
+   * Releases the per-call temp dir backing `result.frames` image files. Callers
+   * that inline the frame images (analyze_video) should call this only AFTER
+   * building content; callers that don't need the images (analyze_videos batch)
+   * should call it as soon as the result is captured to avoid leaking temp dirs.
+   * No-op for cache/sidecar hits. Safe to call more than once.
+   */
+  cleanup: () => Promise<void>;
 }
 
 /**
  * Cache- and sidecar-aware analysis entry point. Checks the in-memory cache, then
  * an on-disk `.analysis.json` sidecar, before running the full pipeline. On a
  * fresh run it populates the cache and (when MCP_WRITE_SIDECARS=1) writes
- * sidecars next to the source.
+ * sidecars next to the source. Returns an {@link AnalysisHandle} — call
+ * `cleanup()` when done with the frame images.
  */
 export async function getAnalysis(
   url: string,
   params: AnalyzeParams,
   progress: ProgressReporter = noopProgress,
-): Promise<IAnalysisResult> {
+): Promise<AnalysisHandle> {
   const keyParams = resultDefiningParams(params);
-  const key = cacheKey(url, keyParams);
+  const key = cacheKey(url, { ...keyParams });
 
   if (!params.forceRefresh) {
     const cached = cache.get(key);
-    if (cached) return cached;
+    if (cached) return { result: cached, cleanup: noopCleanup };
 
     const fromDisk = await readAnalysisSidecar(url, keyParams);
     if (fromDisk) {
       cache.set(key, fromDisk);
-      return fromDisk;
+      return { result: fromDisk, cleanup: noopCleanup };
     }
   }
 
-  const { result, transcriptFromWhisper } = await runAnalysisPipeline(url, params, progress);
+  const { result, transcriptFromWhisper, tempDir } = await runAnalysisPipeline(
+    url,
+    params,
+    progress,
+  );
   cache.set(key, result);
 
-  const written = await writeAnalysisSidecars(url, result, keyParams, { transcriptFromWhisper });
-  if (written.length > 0) {
+  const { written, failed } = await writeAnalysisSidecars(url, result, keyParams, {
+    transcriptFromWhisper,
+  });
+  if (failed) {
+    result.warnings.push(
+      'Sidecar persistence failed (MCP_WRITE_SIDECARS) — results were NOT written to disk; a re-run will recompute.',
+    );
+  } else if (written.length > 0) {
     result.warnings.push(
       `Persisted ${written.length} sidecar artifact(s) next to the video (MCP_WRITE_SIDECARS) for resumable reuse.`,
     );
   }
 
-  return result;
+  const cleanup = tempDir
+    ? async () => {
+        await cleanupTempDir(tempDir).catch(() => undefined);
+      }
+    : noopCleanup;
+
+  return { result, cleanup };
 }
 
 export type ToolContent = { type: 'text'; text: string } | Awaited<ReturnType<typeof imageContent>>;
@@ -466,27 +511,46 @@ export type ToolContent = { type: 'text'; text: string } | Awaited<ReturnType<ty
 /**
  * Build the MCP tool response content for an analysis result: a JSON text block
  * (field-filtered) followed by the frame images (unless `frames` is filtered
- * out). Missing frame files are skipped silently — they may be temp files that
- * were cleaned up, or sidecar frames that were deleted.
+ * out).
+ *
+ * Frame images are read first so the JSON can report how many actually made it
+ * into the response. When some frame files are gone (e.g. a cache hit whose temp
+ * dir was already cleaned up), the JSON carries `framesEmbedded < frameCount`
+ * plus a warning, rather than advertising `frameCount` images that aren't there.
  */
 export async function buildAnalysisContent(
   result: IAnalysisResult,
   fields: AnalysisField[] | undefined,
 ): Promise<ToolContent[]> {
-  const filtered = filterAnalysisResult(result, fields);
-  const textData = { ...filtered, frameCount: result.frames.length };
+  const includeFrames = !fields || fields.includes('frames');
 
-  const content: ToolContent[] = [{ type: 'text', text: JSON.stringify(textData, null, 2) }];
-
-  if (!fields || fields.includes('frames')) {
+  const images: ToolContent[] = [];
+  if (includeFrames) {
     for (const frame of result.frames) {
       try {
-        content.push(await imageContent({ path: frame.filePath }));
+        images.push(await imageContent({ path: frame.filePath }));
       } catch {
-        // Frame file may have been cleaned up — skip it.
+        // Frame file may have been cleaned up — skip it (counted below).
       }
     }
   }
 
-  return content;
+  const filtered = filterAnalysisResult(result, fields);
+  const missing = includeFrames ? result.frames.length - images.length : 0;
+  const warnings =
+    missing > 0
+      ? [
+          ...filtered.warnings,
+          `${missing} of ${result.frames.length} frame image(s) were unavailable (likely cleaned up after caching) — re-run with forceRefresh to regenerate them.`,
+        ]
+      : filtered.warnings;
+
+  const textData = {
+    ...filtered,
+    warnings,
+    frameCount: result.frames.length,
+    ...(includeFrames ? { framesEmbedded: images.length } : {}),
+  };
+
+  return [{ type: 'text', text: JSON.stringify(textData, null, 2) }, ...images];
 }

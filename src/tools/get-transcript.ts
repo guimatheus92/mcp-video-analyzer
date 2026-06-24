@@ -113,7 +113,9 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
             if (videoPath) {
               await progress(65, 'Transcribing audio with Whisper...');
               const audioPath = await extractAudioTrack(videoPath, tempDir);
-              transcript = await transcribeAudio(audioPath, transcribeOpts);
+              transcript = await transcribeAudio(audioPath, transcribeOpts, (w) =>
+                warnings.push(w),
+              );
               if (transcript.length > 0) {
                 warnings.push(
                   'Transcript generated via Whisper fallback (no native transcript available).',

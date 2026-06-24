@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { appendFile, copyFile, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR, createTestImage } from '../../test/helpers/index.js';
@@ -48,6 +48,32 @@ describe('transcriptToVtt', () => {
       { time: '0:05', endTime: '0:08', speaker: 'Ana', text: 'tudo bem?' },
     ]);
   });
+
+  it('defaults the last cue to start + 3s', () => {
+    const parsed = parseVtt(transcriptToVtt([{ time: '0:10', text: 'só uma' }]));
+    expect(parsed[0]).toEqual({ time: '0:10', endTime: '0:13', text: 'só uma' });
+  });
+
+  it('honors an explicit endTime over the next cue start', () => {
+    const parsed = parseVtt(
+      transcriptToVtt([
+        { time: '0:00', endTime: '0:10', text: 'longo' },
+        { time: '0:02', text: 'depois' },
+      ]),
+    );
+    expect(parsed[0].endTime).toBe('0:10');
+  });
+
+  it('clamps to a minimum 1s cue when two entries share a timestamp', () => {
+    const parsed = parseVtt(
+      transcriptToVtt([
+        { time: '0:05', text: 'a' },
+        { time: '0:05', text: 'b' },
+      ]),
+    );
+    // end = max(nextStart 5, start + 1 = 6) → 0:06, never a zero/negative cue.
+    expect(parsed[0].endTime).toBe('0:06');
+  });
 });
 
 describe('sidecar write/read', () => {
@@ -66,10 +92,11 @@ describe('sidecar write/read', () => {
       const clip = join(tempDir, 'clip.mp4');
       await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
       const frame = await createTestImage(tempDir, 'frame.jpg');
-      const written = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
+      const { written, failed } = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
         transcriptFromWhisper: true,
       });
       expect(written).toEqual([]);
+      expect(failed).toBe(false);
     } finally {
       await cleanupTempDir(tempDir);
     }
@@ -82,7 +109,7 @@ describe('sidecar write/read', () => {
       await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
       const frame = await createTestImage(tempDir, 'frame.jpg');
 
-      const written = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
+      const { written } = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
         transcriptFromWhisper: true,
       });
       expect(written.length).toBe(3);
@@ -98,6 +125,28 @@ describe('sidecar write/read', () => {
       // Frame path was rewritten into the durable sibling dir and still exists.
       expect(read?.frames[0].filePath).toContain('clip.frames');
       expect(existsSync(read?.frames[0].filePath ?? '')).toBe(true);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('drops frames whose image file vanished after the sidecar was written', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+      await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
+        transcriptFromWhisper: false,
+      });
+
+      // Delete the durable copy the sidecar points at.
+      await rm(join(tempDir, 'clip.frames', 'frame_001.jpg'), { force: true });
+
+      const read = await readAnalysisSidecar(clip, PARAMS);
+      expect(read).not.toBeNull();
+      expect(read?.frames).toHaveLength(0); // the now-missing frame is dropped
+      expect(read?.ocrResults).toHaveLength(1); // text data is unaffected
     } finally {
       await cleanupTempDir(tempDir);
     }
@@ -142,7 +191,7 @@ describe('sidecar write/read', () => {
       const frame = await createTestImage(tempDir, 'frame.jpg');
 
       // transcriptFromWhisper=false → no .vtt is written at all.
-      const written = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
+      const { written } = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
         transcriptFromWhisper: false,
       });
       expect(written).not.toContain(join(tempDir, 'clip.vtt'));

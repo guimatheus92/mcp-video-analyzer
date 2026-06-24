@@ -168,6 +168,25 @@ describe('frame-dedup', () => {
         ),
       ).toEqual([0]);
     });
+
+    it('treats empty/low-confidence text as "no change" and does not reset the baseline', async () => {
+      // Visually identical frames; middle frame has no OCR text. The empty middle
+      // is dropped (no change), and the repeat "R$ 99" is dropped too because the
+      // baseline text was NOT reset by the empty frame.
+      const dir = await mkdtemp(join(tmpdir(), 'dedup-text-'));
+      const p1 = await createTestImage(dir, 'a.jpg', { color: { r: 60, g: 60, b: 60 } });
+      const p2 = await createTestImage(dir, 'b.jpg', { color: { r: 60, g: 60, b: 60 } });
+      const p3 = await createTestImage(dir, 'c.jpg', { color: { r: 60, g: 60, b: 60 } });
+
+      const frames: IFrameResult[] = [
+        { time: '0:01', filePath: p1, mimeType: 'image/jpeg' },
+        { time: '0:02', filePath: p2, mimeType: 'image/jpeg' },
+        { time: '0:03', filePath: p3, mimeType: 'image/jpeg' },
+      ];
+
+      const keep = await dedupeKeepingTextChanges(frames, ['R$ 99', '', 'R$ 99']);
+      expect(keep).toEqual([0]);
+    });
   });
 
   describe('isBlackFrame', () => {

@@ -219,11 +219,11 @@ It's fully opt-in and non-breaking: when `TWELVELABS_API_KEY` is set the `Twelve
 
 ### Transcription (Whisper fallback)
 
-When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded subtitles), the audio track is transcribed with Whisper via a graceful fallback chain:
+When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded subtitles), the audio track is transcribed with Whisper via a graceful fallback chain (in execution order):
 
-1. **`whisper` CLI** — used when a `whisper` executable is found (`pip install -U openai-whisper`). Point `WHISPER_BIN` at the executable if it isn't on `PATH`. Model via `WHISPER_MODEL`, language via `WHISPER_LANGUAGE`. The bundled `ffmpeg-static` is put on the CLI's `PATH` automatically, so no system ffmpeg is required.
-2. **OpenAI Whisper API** — used when `OPENAI_API_KEY` is set.
-3. **@huggingface/transformers** (JS-native, zero external deps) — **opt-in only**: runs *before* the CLI but **only when `WHISPER_HF_MODEL` is explicitly set**. Without it, this strategy is skipped so the CLI's `WHISPER_MODEL`/`WHISPER_LANGUAGE` settings always win. (Previously it ran whenever the optional package was installed, silently transcribing with an English `tiny` model and ignoring your CLI settings.)
+1. **@huggingface/transformers** (JS-native, zero external deps) — **opt-in only**: this strategy runs *first*, but **only when `WHISPER_HF_MODEL` is explicitly set**. When it's unset (the default) the strategy is skipped entirely, so the CLI below wins and its `WHISPER_MODEL`/`WHISPER_LANGUAGE` settings are never silently overridden.
+2. **`whisper` CLI** — used when a `whisper` executable is found (`pip install -U openai-whisper`). Point `WHISPER_BIN` at the executable if it isn't on `PATH`. Model via `WHISPER_MODEL`, language via `WHISPER_LANGUAGE`. The bundled `ffmpeg-static` is put on the CLI's `PATH` automatically, so no system ffmpeg is required.
+3. **OpenAI Whisper API** — used when `OPENAI_API_KEY` is set.
 
 | Env var | Applies to | Default | Example |
 |---------|-----------|---------|---------|
@@ -262,7 +262,7 @@ After frame extraction, the pipeline automatically applies:
 | Step | What it does | Why |
 |------|-------------|-----|
 | **Frame deduplication** | Removes near-identical consecutive frames using perceptual hashing (dHash + Hamming distance) | Screencasts often have long static moments — dedup removes redundant frames, saving tokens |
-| **OCR** | Extracts text visible on screen from each frame (via tesseract.js). Each frame is first preprocessed — grayscale + 2× upscale + contrast normalization — which materially improves accuracy on stylized overlays (prices, dates, coupons, CTAs). | Captures code, error messages, terminal output, UI text that the transcript doesn't cover |
+| **OCR** | Extracts text visible on screen from each frame (via tesseract.js). Each frame is first preprocessed — grayscale + 2× upscale + contrast normalization + sharpen — which materially improves accuracy on stylized overlays (prices, dates, coupons, CTAs). | Captures code, error messages, terminal output, UI text that the transcript doesn't cover |
 | **Annotated timeline** | Merges transcript timestamps + frame timestamps + OCR text into a single chronological view | Gives the AI a unified "what was said, what changed visually, and what text appeared" at each moment |
 
 The OCR step requires `tesseract.js` (included as a dependency). If it fails to load, analysis continues without OCR — no frames or transcript are lost. OCR preprocessing is on by default; set `MCP_OCR_PREPROCESS=0` to OCR the raw frames instead.

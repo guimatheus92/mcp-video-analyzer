@@ -381,8 +381,13 @@ export async function extractKeyFrames(
     return { frames, warnings };
   }
 
+  let sceneErrored = false;
   let frames = await extractSceneFrames(videoPath, outputDir, { threshold, maxFrames }).catch(
-    dropToWarning('Scene frame extraction failed'),
+    (e: unknown) => {
+      warnings.push(`Scene frame extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+      sceneErrored = true;
+      return [] as IFrameResult[];
+    },
   );
 
   if (frames.length === 0) {
@@ -390,8 +395,13 @@ export async function extractKeyFrames(
       dropToWarning('Dense frame extraction failed'),
     );
     if (frames.length > 0) {
+      // Distinguish "scene detection found no cuts" (the common, expected case
+      // for static clips) from "scene detection errored" — the message would
+      // otherwise read as if a real ffmpeg error were simply an absence of cuts.
       warnings.push(
-        'No scene cuts detected; used uniform temporal sampling (better for static clips and on-screen text OCR).',
+        sceneErrored
+          ? 'Scene detection failed; fell back to uniform temporal sampling.'
+          : 'No scene cuts detected; used uniform temporal sampling (better for static clips and on-screen text OCR).',
       );
     }
   }

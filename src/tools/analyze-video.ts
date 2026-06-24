@@ -60,7 +60,11 @@ Use options.model / options.language / options.initialPrompt to override Whisper
       const params = resolveAnalyzeParams(options);
       const fields = options?.fields as AnalysisField[] | undefined;
 
-      const result = await getAnalysis(url, params, progress);
+      // Single-video path keeps the frame temp dir alive so a cache hit within
+      // the TTL can still re-serve images; cleanup happens on process exit /
+      // cache eviction. (The batch tool, which never inlines images, cleans up
+      // per item.)
+      const { result } = await getAnalysis(url, params, progress);
 
       return { content: await buildAnalysisContent(result, fields) };
     },

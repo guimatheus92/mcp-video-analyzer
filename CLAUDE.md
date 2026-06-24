@@ -38,8 +38,8 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - Black frame detection filters out DRM-protected/blank frames automatically.
 - Scene detection threshold default: 0.1 (optimized for screencasts/demos). Use `extractKeyFrames()` (not raw `extractSceneFrames`) so static clips with no scene cuts fall back to uniform temporal sampling — critical for talking-head Reels/Stories.
 - OCR runs on every frame *before* dedup; when OCR is enabled, dedup uses `dedupeKeepingTextChanges()` (visual + on-screen-text aware) so frames whose only change is the text overlay survive. Plain `deduplicateFrames()` (visual only) is used when OCR is off.
-- OCR frames are preprocessed (grayscale + 2× upscale + contrast normalization) by default; `MCP_OCR_PREPROCESS=0` disables.
-- Transcription strategy order: whisper CLI → OpenAI API → HF transformers. HF is **opt-in** (only runs when `WHISPER_HF_MODEL` is set) so it never silently overrides CLI model/language settings. `model`/`language`/`initialPrompt` are overridable per call on `analyze_video`/`analyze_videos`/`get_transcript`.
+- OCR frames are preprocessed (grayscale + 2× upscale + contrast normalization + sharpen) by default; `MCP_OCR_PREPROCESS=0` disables.
+- Transcription strategy order: HF transformers (opt-in) → whisper CLI → OpenAI API. HF only runs when `WHISPER_HF_MODEL` is set, so otherwise the CLI wins and its `WHISPER_MODEL`/`WHISPER_LANGUAGE` settings are never silently overridden. `model`/`language`/`initialPrompt` are overridable per call on `analyze_video`/`analyze_videos`/`get_transcript`.
 - Persistent sidecars (`MCP_WRITE_SIDECARS=1`) write `<stem>.vtt` (Whisper transcripts only, never clobbering an existing one) + `<stem>.analysis.json` + `<stem>.frames/` next to local videos for resumable bulk processing; reads validate `mtime:size` + params.
 
 ## Environment Variables

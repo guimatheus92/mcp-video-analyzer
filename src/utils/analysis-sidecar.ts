@@ -23,12 +23,28 @@ import { toLocalPath } from './url-detector.js';
 
 const SIDECAR_VERSION = 1;
 
+/**
+ * The result-defining inputs that key both the in-memory cache and the on-disk
+ * sidecar. A typed contract (rather than a loose `Record`) keeps the cache key,
+ * the sidecar key, and the validity check in lockstep — a renamed or dropped
+ * field is then a compile error, not a silently-mismatched sidecar.
+ */
+export interface ResultDefiningParams {
+  detail: string;
+  maxFrames: number;
+  threshold: number;
+  ocrLanguage: string;
+  model?: string;
+  language?: string;
+  initialPrompt?: string;
+}
+
 interface PersistedAnalysis {
   version: number;
   /** `mtime:size` of the source video when written — invalidates on edit. */
   stamp: string;
   /** Analysis params this result was produced with (detail/maxFrames/etc.). */
-  params: Record<string, unknown>;
+  params: ResultDefiningParams;
   result: IAnalysisResult;
 }
 
@@ -61,8 +77,8 @@ function vttPath(videoPath: string): string {
   return join(dirname(videoPath), `${stem}.vtt`);
 }
 
-function sameParams(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
-  return JSON.stringify(sortKeys(a)) === JSON.stringify(sortKeys(b));
+function sameParams(a: ResultDefiningParams, b: ResultDefiningParams): boolean {
+  return JSON.stringify(sortKeys({ ...a })) === JSON.stringify(sortKeys({ ...b }));
 }
 
 function sortKeys(obj: Record<string, unknown>): Record<string, unknown> {
@@ -79,7 +95,7 @@ function sortKeys(obj: Record<string, unknown>): Record<string, unknown> {
  */
 export async function readAnalysisSidecar(
   url: string,
-  params: Record<string, unknown>,
+  params: ResultDefiningParams,
 ): Promise<IAnalysisResult | null> {
   const videoPath = toLocalPath(url);
   if (!videoPath) return null;
@@ -91,7 +107,7 @@ export async function readAnalysisSidecar(
     const parsed = JSON.parse(await readFile(jsonPath, 'utf8')) as PersistedAnalysis;
     if (parsed.version !== SIDECAR_VERSION) return null;
     if (parsed.stamp !== fileStamp(videoPath)) return null;
-    if (!sameParams(parsed.params ?? {}, params)) return null;
+    if (!parsed.params || !sameParams(parsed.params, params)) return null;
 
     const result = parsed.result;
     result.frames = (result.frames ?? []).filter((f) => existsSync(f.filePath));
@@ -109,34 +125,39 @@ export async function readAnalysisSidecar(
  * `transcriptFromWhisper` gates the `.vtt`: we only write a transcript we
  * generated ourselves, and never clobber an existing `<stem>.vtt` (which may be
  * the user's own richer transcript from an external pipeline).
+ *
+ * Returns `{ written }` listing the artifacts that were *actually* persisted, and
+ * `failed: true` if a write threw partway. Each path is recorded only after its
+ * write succeeds, so a partial failure is never misreported as success — the
+ * authoritative `.analysis.json` only appears in `written` once it is on disk.
  */
 export async function writeAnalysisSidecars(
   url: string,
   result: IAnalysisResult,
-  params: Record<string, unknown>,
+  params: ResultDefiningParams,
   opts: { transcriptFromWhisper: boolean },
-): Promise<string[]> {
-  if (!sidecarsEnabled()) return [];
+): Promise<{ written: string[]; failed: boolean }> {
+  if (!sidecarsEnabled()) return { written: [], failed: false };
 
   const videoPath = toLocalPath(url);
-  if (!videoPath) return [];
+  if (!videoPath) return { written: [], failed: false };
 
   const stamp = fileStamp(videoPath);
-  if (!stamp) return [];
+  if (!stamp) return { written: [], failed: false };
 
   const written: string[] = [];
 
   try {
     // Copy optimized frames into a durable sibling dir and rewrite paths so the
     // persisted JSON points at images that survive temp-dir cleanup.
-    const persistedFrames = result.frames;
     let jsonFrames = result.frames;
+    let dir: string | null = null;
     if (result.frames.length > 0) {
-      const dir = framesDir(videoPath);
+      dir = framesDir(videoPath);
       await mkdir(dir, { recursive: true });
       jsonFrames = [];
-      for (let i = 0; i < persistedFrames.length; i++) {
-        const frame = persistedFrames[i];
+      for (let i = 0; i < result.frames.length; i++) {
+        const frame = result.frames[i];
         const dest = join(dir, `frame_${String(i + 1).padStart(3, '0')}.jpg`);
         try {
           await copyFile(frame.filePath, dest);
@@ -145,9 +166,10 @@ export async function writeAnalysisSidecars(
           // Skip a frame we couldn't copy; keep the rest.
         }
       }
-      written.push(dir);
     }
 
+    // The .analysis.json is the authoritative artifact — write it before
+    // recording any success, so a failed write isn't masked by the frames dir.
     const payload: PersistedAnalysis = {
       version: SIDECAR_VERSION,
       stamp,
@@ -156,6 +178,7 @@ export async function writeAnalysisSidecars(
     };
     const jsonPath = analysisJsonPath(videoPath);
     await writeFile(jsonPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+    if (dir) written.push(dir);
     written.push(jsonPath);
 
     // Transcript sidecar — only our own Whisper output, never overwriting one
@@ -168,10 +191,12 @@ export async function writeAnalysisSidecars(
       }
     }
   } catch {
-    // Best-effort: a write failure must never fail the analysis.
+    // A write failed partway. Report it so the caller can warn the user rather
+    // than claiming the run was checkpointed when the .analysis.json is missing.
+    return { written, failed: true };
   }
 
-  return written;
+  return { written, failed: false };
 }
 
 /** Convert a "M:SS" / "H:MM:SS" timestamp to whole seconds (lenient). */

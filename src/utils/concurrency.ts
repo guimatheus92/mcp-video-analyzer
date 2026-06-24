@@ -3,9 +3,12 @@
  * input order in the returned array. A fixed pool of workers pulls from a shared
  * cursor, so a slow item never blocks others beyond the concurrency cap.
  *
- * `fn` is expected not to reject — callers that need per-item error capture
- * should catch inside `fn` and return a result object. `onSettled` fires after
- * each item completes (for progress reporting).
+ * Contract: **`fn` must not reject.** It is awaited directly, so a single
+ * rejection rejects the whole call and abandons in-flight work, leaving the
+ * returned array sparse — the `Promise<R[]>` return type only holds if every
+ * call resolves. Callers that need per-item error capture (e.g. the batch tool)
+ * MUST catch inside `fn` and return a result object encoding the failure.
+ * `onSettled` fires after each item resolves (for progress reporting).
  */
 export async function mapWithConcurrency<T, R>(
   items: readonly T[],

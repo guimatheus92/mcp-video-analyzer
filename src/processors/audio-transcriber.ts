@@ -1,7 +1,6 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { basename, delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
@@ -77,17 +76,18 @@ export interface TranscribeOptions {
 export async function transcribeAudio(
   audioPath: string,
   opts: TranscribeOptions = {},
+  onWarning?: (message: string) => void,
 ): Promise<ITranscriptEntry[]> {
   // Strategy 1: @huggingface/transformers (JS-native whisper) — opt-in
   const hfResult = await transcribeWithHuggingFace(audioPath, opts);
   if (hfResult) return hfResult;
 
   // Strategy 2: whisper CLI
-  const cliResult = await transcribeWithWhisperCli(audioPath, opts);
+  const cliResult = await transcribeWithWhisperCli(audioPath, opts, onWarning);
   if (cliResult) return cliResult;
 
   // Strategy 3: OpenAI Whisper API
-  const apiResult = await transcribeWithOpenAiApi(audioPath, opts);
+  const apiResult = await transcribeWithOpenAiApi(audioPath, opts, onWarning);
   if (apiResult) return apiResult;
 
   // No transcription strategy available
@@ -177,7 +177,9 @@ export function buildWhisperCliArgs(
     args.push('--language', language);
   }
 
-  const prompt = opts.initialPrompt ?? process.env.WHISPER_PROMPT;
+  // `||` (not `??`) so an empty-string override falls through to the env value
+  // rather than passing an empty `--initial_prompt`, matching model/language.
+  const prompt = opts.initialPrompt || process.env.WHISPER_PROMPT;
   if (prompt) {
     args.push('--initial_prompt', prompt);
   }
@@ -229,12 +231,15 @@ export function parseWhisperJson(raw: string): ITranscriptEntry[] | null {
 async function transcribeWithWhisperCli(
   audioPath: string,
   opts: TranscribeOptions,
+  onWarning?: (message: string) => void,
 ): Promise<ITranscriptEntry[] | null> {
   const whisperCmd = await findWhisperCommand();
-  if (!whisperCmd) return null;
+  if (!whisperCmd) return null; // not installed — silent; the next strategy handles it.
 
-  const outputDir = tmpdir();
-  // whisper writes the transcript to <outputDir>/<base>.json — not to stdout.
+  // Write output into the audio's own dir (a per-video temp dir) rather than a
+  // shared tmpdir(), so concurrent transcriptions don't collide on the same
+  // `<base>.json` (every audio track is named `audio.wav`).
+  const outputDir = dirname(audioPath);
   const jsonPath = join(outputDir, `${basename(audioPath, extname(audioPath))}.json`);
 
   try {
@@ -244,10 +249,17 @@ async function transcribeWithWhisperCli(
       ...process.env,
       PATH: `${dirname(ffmpegPath)}${delimiter}${process.env.PATH ?? ''}`,
     };
-    await execFile(whisperCmd, buildWhisperCliArgs(audioPath, outputDir, opts), {
-      timeout: 300000,
-      env,
-    });
+    try {
+      await execFile(whisperCmd, buildWhisperCliArgs(audioPath, outputDir, opts), {
+        timeout: 300000,
+        env,
+      });
+    } catch (e: unknown) {
+      // The binary was found but crashed/timed out — surface it (it's fixable,
+      // unlike "not installed") instead of collapsing into a silent "no transcript".
+      onWarning?.(`Whisper CLI failed: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
     return parseWhisperJson(await readFile(jsonPath, 'utf-8'));
   } catch {
     return null;
@@ -260,6 +272,7 @@ async function transcribeWithWhisperCli(
 async function transcribeWithOpenAiApi(
   audioPath: string,
   opts: TranscribeOptions,
+  onWarning?: (message: string) => void,
 ): Promise<ITranscriptEntry[] | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -279,7 +292,7 @@ async function transcribeWithOpenAiApi(
       formData.append('language', language);
     }
 
-    const prompt = opts.initialPrompt ?? process.env.WHISPER_PROMPT;
+    const prompt = opts.initialPrompt || process.env.WHISPER_PROMPT;
     if (prompt) {
       formData.append('prompt', prompt);
     }
@@ -290,7 +303,10 @@ async function transcribeWithOpenAiApi(
       body: formData,
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      onWarning?.(`OpenAI transcription API returned HTTP ${response.status}.`);
+      return null;
+    }
 
     const data = (await response.json()) as Record<string, unknown>;
 
@@ -311,7 +327,8 @@ async function transcribeWithOpenAiApi(
     }
 
     return null;
-  } catch {
+  } catch (e: unknown) {
+    onWarning?.(`OpenAI transcription failed: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }
