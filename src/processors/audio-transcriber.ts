@@ -1,10 +1,10 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { tmpdir } from 'node:os';
 import { basename, delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
+import { envFlag } from '../utils/env.js';
 import { formatTimestamp } from './frame-extractor.js';
 
 const execFile = promisify(execFileCb);
@@ -46,48 +46,78 @@ export async function extractAudioTrack(videoPath: string, outputDir: string): P
 }
 
 /**
+ * Per-call transcription overrides. Each field takes precedence over the
+ * corresponding environment variable, letting callers pick a heavier model or a
+ * domain glossary for one hard clip without restarting the server. Unset fields
+ * fall back to the env defaults.
+ */
+export interface TranscribeOptions {
+  /** Whisper model name, e.g. `small`, `medium` (overrides WHISPER_MODEL). */
+  model?: string;
+  /** Forced language code, e.g. `pt` (overrides WHISPER_LANGUAGE). */
+  language?: string;
+  /** Domain glossary fed as `--initial_prompt` (overrides WHISPER_PROMPT). */
+  initialPrompt?: string;
+}
+
+/**
  * Transcribe an audio file using the best available strategy.
  *
  * Strategy chain (graceful fallback):
- * 1. @huggingface/transformers (JS-native, zero external deps;
- *    model via WHISPER_HF_MODEL, default Xenova/whisper-tiny)
- * 2. whisper CLI (requires Python + whisper installed globally;
- *    model via WHISPER_MODEL, language via WHISPER_LANGUAGE)
+ * 1. @huggingface/transformers — **opt-in only**: runs solely when
+ *    WHISPER_HF_MODEL is set (otherwise it would silently transcribe with an
+ *    English `tiny` model, ignoring WHISPER_MODEL/WHISPER_LANGUAGE).
+ * 2. whisper CLI (requires Python + whisper installed; model via WHISPER_MODEL,
+ *    language via WHISPER_LANGUAGE, glossary via WHISPER_PROMPT, optional
+ *    GPU/quality flags for whisper-ctranslate2 — see buildWhisperCliArgs).
  * 3. OpenAI Whisper API (requires OPENAI_API_KEY env var)
  * 4. Returns [] if nothing is available
  */
-export async function transcribeAudio(audioPath: string): Promise<ITranscriptEntry[]> {
-  // Strategy 1: @huggingface/transformers (JS-native whisper)
-  const hfResult = await transcribeWithHuggingFace(audioPath);
+export async function transcribeAudio(
+  audioPath: string,
+  opts: TranscribeOptions = {},
+  onWarning?: (message: string) => void,
+): Promise<ITranscriptEntry[]> {
+  // Strategy 1: @huggingface/transformers (JS-native whisper) — opt-in
+  const hfResult = await transcribeWithHuggingFace(audioPath, opts);
   if (hfResult) return hfResult;
 
   // Strategy 2: whisper CLI
-  const cliResult = await transcribeWithWhisperCli(audioPath);
+  const cliResult = await transcribeWithWhisperCli(audioPath, opts, onWarning);
   if (cliResult) return cliResult;
 
   // Strategy 3: OpenAI Whisper API
-  const apiResult = await transcribeWithOpenAiApi(audioPath);
+  const apiResult = await transcribeWithOpenAiApi(audioPath, opts, onWarning);
   if (apiResult) return apiResult;
 
   // No transcription strategy available
   return [];
 }
 
-async function transcribeWithHuggingFace(audioPath: string): Promise<ITranscriptEntry[] | null> {
+async function transcribeWithHuggingFace(
+  audioPath: string,
+  opts: TranscribeOptions,
+): Promise<ITranscriptEntry[] | null> {
+  // Opt-in: without an explicit HF model the CLI (which honors WHISPER_MODEL /
+  // WHISPER_LANGUAGE) should win, so we don't silently fall back to tiny/English.
+  const hfModel = process.env.WHISPER_HF_MODEL;
+  if (!hfModel) return null;
+
   const transformers = await loadTransformers();
   if (!transformers) return null;
 
   try {
     const { pipeline } = transformers;
-    const hfModel = process.env.WHISPER_HF_MODEL || 'Xenova/whisper-tiny';
     const transcriber = await pipeline('automatic-speech-recognition', hfModel, {
       return_timestamps: true,
     });
 
+    const language = opts.language || process.env.WHISPER_LANGUAGE;
     const result = await transcriber(audioPath, {
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5,
+      ...(language ? { language, task: 'transcribe' } : {}),
     });
 
     if (!result || typeof result !== 'object') return null;
@@ -122,17 +152,55 @@ async function transcribeWithHuggingFace(audioPath: string): Promise<ITranscript
 /**
  * Build the argument list for the `whisper` CLI.
  *
+ * Precedence: per-call `opts` → environment variable → built-in default.
  * Model defaults to `tiny` but can be overridden with WHISPER_MODEL (e.g. `small`,
  * `medium` for much better non-English accuracy). WHISPER_LANGUAGE forces a language
- * (e.g. `pt`) instead of relying on auto-detection.
+ * (e.g. `pt`) instead of relying on auto-detection. WHISPER_PROMPT supplies a domain
+ * glossary (`--initial_prompt`) that fixes proper nouns (brand/place names).
+ *
+ * GPU/quality flags are **env-gated** so they're only emitted when explicitly
+ * requested: `openai-whisper` rejects flags it doesn't know (notably
+ * `--compute_type`), while the drop-in `whisper-ctranslate2` / `faster-whisper`
+ * CLI accepts the full set. `--device`, `--beam_size`, and `--word_timestamps`
+ * are understood by both backends; only `--compute_type` is ctranslate2-specific.
  */
-export function buildWhisperCliArgs(audioPath: string, outputDir: string): string[] {
-  const model = process.env.WHISPER_MODEL || 'tiny';
+export function buildWhisperCliArgs(
+  audioPath: string,
+  outputDir: string,
+  opts: TranscribeOptions = {},
+): string[] {
+  const model = opts.model || process.env.WHISPER_MODEL || 'tiny';
   const args = [audioPath, '--output_format', 'json', '--model', model, '--output_dir', outputDir];
 
-  const language = process.env.WHISPER_LANGUAGE;
+  const language = opts.language || process.env.WHISPER_LANGUAGE;
   if (language) {
     args.push('--language', language);
+  }
+
+  // `||` (not `??`) so an empty-string override falls through to the env value
+  // rather than passing an empty `--initial_prompt`, matching model/language.
+  const prompt = opts.initialPrompt || process.env.WHISPER_PROMPT;
+  if (prompt) {
+    args.push('--initial_prompt', prompt);
+  }
+
+  const device = process.env.WHISPER_DEVICE; // 'cuda' | 'cpu'
+  if (device) {
+    args.push('--device', device);
+  }
+
+  const compute = process.env.WHISPER_COMPUTE; // ctranslate2 only: 'float16' | 'int8_float16' | 'int8'
+  if (compute) {
+    args.push('--compute_type', compute);
+  }
+
+  const beamSize = process.env.WHISPER_BEAM_SIZE;
+  if (beamSize) {
+    args.push('--beam_size', beamSize);
+  }
+
+  if (envFlag(process.env.WHISPER_WORD_TIMESTAMPS)) {
+    args.push('--word_timestamps', 'True');
   }
 
   return args;
@@ -160,12 +228,18 @@ export function parseWhisperJson(raw: string): ITranscriptEntry[] | null {
     }));
 }
 
-async function transcribeWithWhisperCli(audioPath: string): Promise<ITranscriptEntry[] | null> {
+async function transcribeWithWhisperCli(
+  audioPath: string,
+  opts: TranscribeOptions,
+  onWarning?: (message: string) => void,
+): Promise<ITranscriptEntry[] | null> {
   const whisperCmd = await findWhisperCommand();
-  if (!whisperCmd) return null;
+  if (!whisperCmd) return null; // not installed — silent; the next strategy handles it.
 
-  const outputDir = tmpdir();
-  // whisper writes the transcript to <outputDir>/<base>.json — not to stdout.
+  // Write output into the audio's own dir (a per-video temp dir) rather than a
+  // shared tmpdir(), so concurrent transcriptions don't collide on the same
+  // `<base>.json` (every audio track is named `audio.wav`).
+  const outputDir = dirname(audioPath);
   const jsonPath = join(outputDir, `${basename(audioPath, extname(audioPath))}.json`);
 
   try {
@@ -175,10 +249,17 @@ async function transcribeWithWhisperCli(audioPath: string): Promise<ITranscriptE
       ...process.env,
       PATH: `${dirname(ffmpegPath)}${delimiter}${process.env.PATH ?? ''}`,
     };
-    await execFile(whisperCmd, buildWhisperCliArgs(audioPath, outputDir), {
-      timeout: 300000,
-      env,
-    });
+    try {
+      await execFile(whisperCmd, buildWhisperCliArgs(audioPath, outputDir, opts), {
+        timeout: 300000,
+        env,
+      });
+    } catch (e: unknown) {
+      // The binary was found but crashed/timed out — surface it (it's fixable,
+      // unlike "not installed") instead of collapsing into a silent "no transcript".
+      onWarning?.(`Whisper CLI failed: ${e instanceof Error ? e.message : String(e)}`);
+      return null;
+    }
     return parseWhisperJson(await readFile(jsonPath, 'utf-8'));
   } catch {
     return null;
@@ -188,7 +269,11 @@ async function transcribeWithWhisperCli(audioPath: string): Promise<ITranscriptE
   }
 }
 
-async function transcribeWithOpenAiApi(audioPath: string): Promise<ITranscriptEntry[] | null> {
+async function transcribeWithOpenAiApi(
+  audioPath: string,
+  opts: TranscribeOptions,
+  onWarning?: (message: string) => void,
+): Promise<ITranscriptEntry[] | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
 
@@ -202,13 +287,26 @@ async function transcribeWithOpenAiApi(audioPath: string): Promise<ITranscriptEn
     formData.append('response_format', 'verbose_json');
     formData.append('timestamp_granularities[]', 'segment');
 
+    const language = opts.language || process.env.WHISPER_LANGUAGE;
+    if (language) {
+      formData.append('language', language);
+    }
+
+    const prompt = opts.initialPrompt || process.env.WHISPER_PROMPT;
+    if (prompt) {
+      formData.append('prompt', prompt);
+    }
+
     const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}` },
       body: formData,
     });
 
-    if (!response.ok) return null;
+    if (!response.ok) {
+      onWarning?.(`OpenAI transcription API returned HTTP ${response.status}.`);
+      return null;
+    }
 
     const data = (await response.json()) as Record<string, unknown>;
 
@@ -229,7 +327,8 @@ async function transcribeWithOpenAiApi(audioPath: string): Promise<ITranscriptEn
     }
 
     return null;
-  } catch {
+  } catch (e: unknown) {
+    onWarning?.(`OpenAI transcription failed: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
 }

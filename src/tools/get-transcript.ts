@@ -17,6 +17,27 @@ const GetTranscriptSchema = z.object({
     .describe(
       'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
+  options: z
+    .object({
+      model: z
+        .string()
+        .optional()
+        .describe(
+          'Whisper model for the transcription fallback (overrides WHISPER_MODEL for this call), e.g. "small", "medium".',
+        ),
+      language: z
+        .string()
+        .optional()
+        .describe('Forced transcription language code (overrides WHISPER_LANGUAGE), e.g. "pt".'),
+      initialPrompt: z
+        .string()
+        .optional()
+        .describe(
+          'Domain glossary fed to Whisper as --initial_prompt (overrides WHISPER_PROMPT). Fixes proper nouns in the transcript.',
+        ),
+    })
+    .optional()
+    .describe('Transcription overrides (apply only to the Whisper fallback)'),
 });
 
 export function registerGetTranscript(server: FastMCP): void {
@@ -41,7 +62,12 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
     },
     execute: async (args, { reportProgress }) => {
       const progress = createProgressReporter(reportProgress);
-      const { url } = args;
+      const { url, options } = args;
+      const transcribeOpts = {
+        model: options?.model,
+        language: options?.language,
+        initialPrompt: options?.initialPrompt,
+      };
 
       let adapter;
       try {
@@ -87,7 +113,9 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
             if (videoPath) {
               await progress(65, 'Transcribing audio with Whisper...');
               const audioPath = await extractAudioTrack(videoPath, tempDir);
-              transcript = await transcribeAudio(audioPath);
+              transcript = await transcribeAudio(audioPath, transcribeOpts, (w) =>
+                warnings.push(w),
+              );
               if (transcript.length > 0) {
                 warnings.push(
                   'Transcript generated via Whisper fallback (no native transcript available).',

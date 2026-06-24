@@ -6,6 +6,7 @@ import { LoomAdapter } from './adapters/loom.adapter.js';
 import { TwelveLabsAdapter } from './adapters/twelvelabs.adapter.js';
 import { registerAnalyzeMoment } from './tools/analyze-moment.js';
 import { registerAnalyzeVideo } from './tools/analyze-video.js';
+import { registerAnalyzeVideos } from './tools/analyze-videos.js';
 import { registerGetFrameAt } from './tools/get-frame-at.js';
 import { registerGetFrameBurst } from './tools/get-frame-burst.js';
 import { registerGetFrames } from './tools/get-frames.js';
@@ -15,7 +16,7 @@ import { registerGetTranscript } from './tools/get-transcript.js';
 export function createServer(): FastMCP {
   const server = new FastMCP({
     name: 'mcp-video-analyzer',
-    version: '0.4.0',
+    version: '0.5.0',
     instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs and local video files.
 
 AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:
@@ -40,6 +41,7 @@ Tools (choose the most efficient one for the task):
   - detail="detailed" → dense 1fps sampling, more frames, thorough OCR
   - fields=["metadata","transcript"] → return only specific fields
   - Cached for 10min — use forceRefresh=true to re-analyze.
+- analyze_videos: Batch version of analyze_video. Use when given a list of sources (e.g. a folder of local files). Runs them with a concurrency limit and returns one structured result per source (counts + warnings, or a per-item error). Pair with MCP_WRITE_SIDECARS=1 for resumable bulk processing.
 - get_transcript: Transcript only. Faster than analyze_video when you only need what was said. Whisper fallback for videos without native transcripts.
 - get_metadata: Metadata + comments + chapters. No video download needed.
 - get_frames: Frames only (scene-change or dense=true for 1fps). Use when you need visuals without transcript.
@@ -67,6 +69,7 @@ Decision flow:
 
   // Register tools
   registerAnalyzeVideo(server);
+  registerAnalyzeVideos(server);
   registerGetFrameAt(server);
   registerGetFrameBurst(server);
   registerGetTranscript(server);

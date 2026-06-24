@@ -1,9 +1,90 @@
-import type { IFrameResult } from '../types.js';
+import { rm } from 'node:fs/promises';
+import type { IFrameResult, IOcrEntry } from '../types.js';
+import { preprocessForOcr } from './image-optimizer.js';
 
-export interface IOcrResult {
-  time: string;
-  text: string;
-  confidence: number;
+/**
+ * OCR result for a single frame. Alias of the canonical {@link IOcrEntry} in
+ * types.ts — kept as a named export for the OCR module's API while remaining a
+ * single source of truth for the shape.
+ */
+export type IOcrResult = IOcrEntry;
+
+/** Derive the temp path for a frame's OCR-preprocessed copy (lossless PNG). */
+function ocrPreprocessPath(framePath: string): string {
+  return `${framePath.replace(/\.[^.\\/]+$/, '')}.ocr.png`;
+}
+
+/** A result is "meaningful" (kept in output / trusted for dedup) above these. */
+const MIN_TEXT_LENGTH = 3;
+const MIN_CONFIDENCE = 50;
+
+/** True for OCR results worth surfacing — filters short/low-confidence noise. */
+export function isMeaningfulOcr(result: IOcrResult): boolean {
+  return result.text.length > MIN_TEXT_LENGTH && result.confidence > MIN_CONFIDENCE;
+}
+
+/**
+ * Run OCR on every frame, returning one result per input frame (aligned 1:1 by
+ * index). Frames that yield no text or fail recognition come back with an empty
+ * string and confidence 0 rather than being dropped — callers that need the
+ * raw, per-frame signal (e.g. text-aware dedup) rely on this alignment.
+ *
+ * Returns `[]` when tesseract.js isn't available (alignment is then the caller's
+ * responsibility to detect via length mismatch).
+ */
+export async function ocrFrames(
+  frames: IFrameResult[],
+  language = 'eng+por',
+  onProgress?: (completed: number, total: number) => void,
+): Promise<IOcrResult[]> {
+  const Tesseract = await loadTesseract();
+  if (!Tesseract) return [];
+
+  // Preprocessing (grayscale + 2× upscale + contrast normalization) materially
+  // improves OCR of stylized on-screen text. On by default; set
+  // MCP_OCR_PREPROCESS=0 to OCR the raw frames instead.
+  const preprocess = process.env.MCP_OCR_PREPROCESS !== '0';
+  const worker = await Tesseract.createWorker(language);
+
+  try {
+    const results: IOcrResult[] = [];
+
+    for (let i = 0; i < frames.length; i++) {
+      const frame = frames[i];
+
+      let target = frame.filePath;
+      let scratch: string | null = null;
+      if (preprocess) {
+        const out = ocrPreprocessPath(frame.filePath);
+        const ok = await preprocessForOcr(frame.filePath, out)
+          .then(() => true)
+          .catch(() => false);
+        if (ok) {
+          target = out;
+          scratch = out;
+        }
+      }
+
+      let text = '';
+      let confidence = 0;
+      try {
+        const { data } = await worker.recognize(target);
+        text = data.text.trim();
+        confidence = Math.round(data.confidence);
+      } catch {
+        // Recognition failed for this frame — keep the aligned empty entry.
+      } finally {
+        if (scratch) await rm(scratch, { force: true }).catch(() => undefined);
+      }
+
+      results.push({ time: frame.time, text, confidence });
+      onProgress?.(i + 1, frames.length);
+    }
+
+    return results;
+  } finally {
+    await worker.terminate();
+  }
 }
 
 /**
@@ -17,39 +98,8 @@ export async function extractTextFromFrames(
   language = 'eng+por',
   onProgress?: (completed: number, total: number) => void,
 ): Promise<IOcrResult[]> {
-  const Tesseract = await loadTesseract();
-  if (!Tesseract) return [];
-
-  const worker = await Tesseract.createWorker(language);
-
-  try {
-    const results: IOcrResult[] = [];
-
-    for (let i = 0; i < frames.length; i++) {
-      const frame = frames[i];
-      try {
-        const {
-          data: { text, confidence },
-        } = await worker.recognize(frame.filePath);
-
-        const cleaned = text.trim();
-        if (cleaned.length > 3 && confidence > 50) {
-          results.push({
-            time: frame.time,
-            text: cleaned,
-            confidence: Math.round(confidence),
-          });
-        }
-      } catch {
-        // Skip frames that fail OCR
-      }
-      onProgress?.(i + 1, frames.length);
-    }
-
-    return results;
-  } finally {
-    await worker.terminate();
-  }
+  const all = await ocrFrames(frames, language, onProgress);
+  return all.filter(isMeaningfulOcr);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -64,8 +64,18 @@ describe('transcribeAudio with OpenAI API key', () => {
 
 describe('buildWhisperCliArgs', () => {
   beforeEach(() => {
-    vi.stubEnv('WHISPER_MODEL', '');
-    vi.stubEnv('WHISPER_LANGUAGE', '');
+    // Clear every env the builder reads so defaults are deterministic.
+    for (const key of [
+      'WHISPER_MODEL',
+      'WHISPER_LANGUAGE',
+      'WHISPER_PROMPT',
+      'WHISPER_DEVICE',
+      'WHISPER_COMPUTE',
+      'WHISPER_BEAM_SIZE',
+      'WHISPER_WORD_TIMESTAMPS',
+    ]) {
+      vi.stubEnv(key, '');
+    }
   });
 
   afterEach(() => {
@@ -103,6 +113,57 @@ describe('buildWhisperCliArgs', () => {
     const langIdx = args.indexOf('--language');
     expect(langIdx).toBeGreaterThan(-1);
     expect(args[langIdx + 1]).toBe('pt');
+  });
+
+  it('per-call opts take precedence over env for model/language', () => {
+    vi.stubEnv('WHISPER_MODEL', 'small');
+    vi.stubEnv('WHISPER_LANGUAGE', 'en');
+    const args = buildWhisperCliArgs('/audio/clip.wav', '/tmp/out', {
+      model: 'medium',
+      language: 'pt',
+    });
+    expect(args[args.indexOf('--model') + 1]).toBe('medium');
+    expect(args[args.indexOf('--language') + 1]).toBe('pt');
+  });
+
+  it('passes --initial_prompt from WHISPER_PROMPT', () => {
+    vi.stubEnv('WHISPER_PROMPT', 'Doha, Smiles, Livelo');
+    const args = buildWhisperCliArgs('/audio/clip.wav', '/tmp/out');
+    expect(args[args.indexOf('--initial_prompt') + 1]).toBe('Doha, Smiles, Livelo');
+  });
+
+  it('per-call initialPrompt overrides WHISPER_PROMPT', () => {
+    vi.stubEnv('WHISPER_PROMPT', 'env glossary');
+    const args = buildWhisperCliArgs('/audio/clip.wav', '/tmp/out', {
+      initialPrompt: 'call glossary',
+    });
+    expect(args[args.indexOf('--initial_prompt') + 1]).toBe('call glossary');
+  });
+
+  it('omits GPU flags unless their env vars are set', () => {
+    const args = buildWhisperCliArgs('/audio/clip.wav', '/tmp/out');
+    expect(args).not.toContain('--device');
+    expect(args).not.toContain('--compute_type');
+    expect(args).not.toContain('--beam_size');
+    expect(args).not.toContain('--word_timestamps');
+  });
+
+  it('emits env-gated GPU/quality flags when set', () => {
+    vi.stubEnv('WHISPER_DEVICE', 'cuda');
+    vi.stubEnv('WHISPER_COMPUTE', 'float16');
+    vi.stubEnv('WHISPER_BEAM_SIZE', '5');
+    vi.stubEnv('WHISPER_WORD_TIMESTAMPS', '1');
+    const args = buildWhisperCliArgs('/audio/clip.wav', '/tmp/out');
+    expect(args[args.indexOf('--device') + 1]).toBe('cuda');
+    expect(args[args.indexOf('--compute_type') + 1]).toBe('float16');
+    expect(args[args.indexOf('--beam_size') + 1]).toBe('5');
+    expect(args[args.indexOf('--word_timestamps') + 1]).toBe('True');
+  });
+
+  it('treats falsy WHISPER_WORD_TIMESTAMPS as off', () => {
+    vi.stubEnv('WHISPER_WORD_TIMESTAMPS', '0');
+    const args = buildWhisperCliArgs('/audio/clip.wav', '/tmp/out');
+    expect(args).not.toContain('--word_timestamps');
   });
 });
 

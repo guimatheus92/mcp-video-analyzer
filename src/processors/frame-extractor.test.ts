@@ -7,6 +7,7 @@ import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import {
   extractDenseFrames,
   extractFrameAt,
+  extractKeyFrames,
   formatTimestamp,
   parseProbeFromStderr,
   parseSceneTimestamps,
@@ -234,6 +235,57 @@ describe('extractDenseFrames', () => {
       for (const frame of frames) {
         expect(frame.time).toMatch(/^\d+:\d{2}$/);
       }
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+});
+
+describe('extractKeyFrames', () => {
+  it('returns frames in dense mode (uniform sampling)', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const { frames, warnings } = await extractKeyFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+        dense: true,
+        maxFrames: 10,
+      });
+
+      expect(frames.length).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(warnings)).toBe(true);
+      for (const frame of frames) {
+        expect(existsSync(frame.filePath)).toBe(true);
+      }
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('yields frames for a clip even with no scene cuts (falls back to uniform sampling)', async () => {
+    const tempDir = await createTempDir();
+    try {
+      // ffmpeg scene scores are in [0,1], so gt(scene,1) is never true →
+      // scene detection finds nothing and the uniform-sampling fallback kicks in.
+      const { frames, warnings } = await extractKeyFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+        threshold: 1.0,
+        maxFrames: 10,
+      });
+
+      expect(frames.length).toBeGreaterThanOrEqual(1);
+      expect(warnings.some((w) => w.includes('uniform temporal sampling'))).toBe(true);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('degrades to an empty result with a warning (never throws) for a bad file', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const { frames, warnings } = await extractKeyFrames('/nonexistent/video.mp4', tempDir, {
+        maxFrames: 5,
+      });
+
+      expect(frames).toEqual([]);
+      expect(warnings.length).toBeGreaterThan(0);
     } finally {
       await cleanupTempDir(tempDir);
     }
