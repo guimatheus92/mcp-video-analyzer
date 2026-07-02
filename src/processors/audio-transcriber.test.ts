@@ -1,13 +1,20 @@
+import { execFile as execFileCb } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import {
   buildWhisperCliArgs,
   extractAudioTrack,
+  parseMeanVolume,
   parseWhisperJson,
   transcribeAudio,
 } from './audio-transcriber.js';
+
+const execFile = promisify(execFileCb);
+const ffmpegPath: string = createRequire(import.meta.url)('ffmpeg-static') as string;
 
 describe('extractAudioTrack', () => {
   it('throws for video without audio stream (tiny.mp4 has no audio)', async () => {
@@ -36,7 +43,13 @@ describe('extractAudioTrack', () => {
 
 describe('transcribeAudio', () => {
   beforeEach(() => {
+    // Make "no strategy available" true on every machine: without these stubs
+    // the tests silently exercise whatever whisper/HF/OpenAI the host has
+    // installed (slow and environment-dependent).
     vi.stubEnv('OPENAI_API_KEY', '');
+    vi.stubEnv('WHISPER_HF_MODEL', '');
+    vi.stubEnv('WHISPER_BIN', '');
+    vi.stubEnv('PATH', '');
   });
 
   afterEach(() => {
@@ -52,11 +65,58 @@ describe('transcribeAudio', () => {
     const result = await transcribeAudio('/nonexistent/audio.wav');
     expect(result).toEqual([]);
   });
+
+  it('skips every strategy for a silent track, with a warning', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const silentWav = join(tempDir, 'silent.wav');
+      await execFile(
+        ffmpegPath,
+        ['-f', 'lavfi', '-i', 'anullsrc=r=16000:cl=mono', '-t', '1', silentWav, '-y'],
+        { timeout: 30000 },
+      );
+
+      const warnings: string[] = [];
+      const result = await transcribeAudio(silentWav, {}, (w) => warnings.push(w));
+
+      expect(result).toEqual([]);
+      expect(warnings.some((w) => w.includes('silent'))).toBe(true);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+});
+
+describe('parseMeanVolume', () => {
+  it('reads the mean volume from volumedetect stderr', () => {
+    const stderr = [
+      '[Parsed_volumedetect_0 @ 0x7f9b] n_samples: 16000',
+      '[Parsed_volumedetect_0 @ 0x7f9b] mean_volume: -23.5 dB',
+      '[Parsed_volumedetect_0 @ 0x7f9b] max_volume: -5.2 dB',
+    ].join('\n');
+    expect(parseMeanVolume(stderr)).toBe(-23.5);
+  });
+
+  it('reads the -91.0 dB floor ffmpeg reports for digital silence', () => {
+    expect(parseMeanVolume('[Parsed_volumedetect_0 @ 0x1] mean_volume: -91.0 dB')).toBe(-91);
+  });
+
+  it('returns null when no reading is present', () => {
+    expect(parseMeanVolume('no volume info here')).toBeNull();
+    expect(parseMeanVolume('')).toBeNull();
+  });
 });
 
 describe('transcribeAudio with OpenAI API key', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it('skips OpenAI when OPENAI_API_KEY is not set', async () => {
     vi.stubEnv('OPENAI_API_KEY', '');
+    vi.stubEnv('WHISPER_HF_MODEL', '');
+    vi.stubEnv('WHISPER_BIN', '');
+    vi.stubEnv('PATH', '');
     const result = await transcribeAudio('/nonexistent/audio.wav');
     expect(result).toEqual([]);
   });

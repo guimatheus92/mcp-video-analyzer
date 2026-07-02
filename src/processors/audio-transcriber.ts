@@ -61,7 +61,42 @@ export interface TranscribeOptions {
 }
 
 /**
+ * Mean-volume floor (dBFS): tracks quieter than this are treated as silent
+ * (muted screen recordings, silent Reels/Stories) and skip Whisper entirely,
+ * so an empty transcript reads as content instead of a transcription failure.
+ */
+// ponytail: -55dB mean over the first 2 minutes; add an env knob if a real voice track ever trips it.
+const SILENCE_MEAN_DB = -55;
+
+/**
+ * Parse `mean_volume: -XX.X dB` from ffmpeg volumedetect stderr.
+ * Exported for testing. Returns null when no reading is present.
+ */
+export function parseMeanVolume(stderr: string): number | null {
+  const match = /mean_volume:\s*(-?[\d.]+)\s*dB/.exec(stderr);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isFinite(value) ? value : null;
+}
+
+async function detectMeanVolume(audioPath: string): Promise<number | null> {
+  try {
+    const { stderr } = await execFile(
+      ffmpegPath,
+      ['-hide_banner', '-t', '120', '-i', audioPath, '-af', 'volumedetect', '-f', 'null', '-'],
+      { timeout: 30000 },
+    );
+    return parseMeanVolume(stderr);
+  } catch {
+    return null; // probe failure never blocks transcription
+  }
+}
+
+/**
  * Transcribe an audio file using the best available strategy.
+ *
+ * A silence gate runs first: a present-but-mute track (common in Reels/Stories)
+ * skips every strategy with a warning, so no Whisper time is burned producing [].
  *
  * Strategy chain (graceful fallback):
  * 1. @huggingface/transformers — **opt-in only**: runs solely when
@@ -78,6 +113,14 @@ export async function transcribeAudio(
   opts: TranscribeOptions = {},
   onWarning?: (message: string) => void,
 ): Promise<ITranscriptEntry[]> {
+  const meanDb = await detectMeanVolume(audioPath);
+  if (meanDb !== null && meanDb <= SILENCE_MEAN_DB) {
+    onWarning?.(
+      `Audio track is silent (mean volume ${meanDb}dB) — empty transcript is expected content, not an error.`,
+    );
+    return [];
+  }
+
   // Strategy 1: @huggingface/transformers (JS-native whisper) — opt-in
   const hfResult = await transcribeWithHuggingFace(audioPath, opts);
   if (hfResult) return hfResult;
