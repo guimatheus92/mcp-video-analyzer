@@ -17,7 +17,7 @@ import { registerGetTranscript } from './tools/get-transcript.js';
 export function createServer(): FastMCP {
   const server = new FastMCP({
     name: 'mcp-video-analyzer',
-    version: '0.5.0',
+    version: '0.6.0',
     instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs and local video files.
 
 AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:
