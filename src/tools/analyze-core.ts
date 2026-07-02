@@ -106,7 +106,10 @@ export const AnalyzeOptionsSchema = z
 
 export type AnalyzeOptions = z.infer<typeof AnalyzeOptionsSchema>;
 
-/** Fully-resolved analysis parameters (defaults applied). */
+/**
+ * Fully-resolved analysis parameters (defaults applied — except `maxFrames`,
+ * which intentionally stays unset for the duration-adaptive default).
+ */
 export interface AnalyzeParams {
   detail: DetailLevel;
   /** `undefined` = duration-adaptive default, resolved after metadata is known. */
@@ -118,7 +121,11 @@ export interface AnalyzeParams {
   transcribe: TranscribeOptions;
 }
 
-/** Resolve raw tool options into concrete params with all defaults applied. */
+/**
+ * Resolve raw tool options into concrete params. All defaults are applied here
+ * except `maxFrames`, which stays `undefined` so the pipeline can resolve the
+ * duration-adaptive default once the video duration is known.
+ */
 export function resolveAnalyzeParams(options: AnalyzeOptions): AnalyzeParams {
   const detail = options?.detail ?? 'standard';
   const config = getDetailConfig(detail);
@@ -234,7 +241,7 @@ async function runAnalysisPipeline(
       // Strategy 1: download (no-op for local files) + ffmpeg frame extraction
       // with scene→uniform-sampling fallback for static clips.
       if (adapter.capabilities.videoDownload) {
-        videoPath = await adapter.downloadVideo(url, tempDir);
+        videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
 
         if (videoPath) {
           await progress(50, 'Video downloaded, extracting frames...');
@@ -393,7 +400,9 @@ async function runAnalysisPipeline(
     } else if (result.transcript.length === 0 && adapter.capabilities.videoDownload) {
       // Even without frames, fetch the video so the Whisper fallback can run.
       tempDir = tempDir ?? (await createTempDir());
-      videoPath = await adapter.downloadVideo(url, tempDir).catch(() => null);
+      videoPath = await adapter
+        .downloadVideo(url, tempDir, (w) => warnings.push(w))
+        .catch(() => null);
     }
 
     // Whisper fallback: no transcript + a video file + a (probable) audio track.

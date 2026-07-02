@@ -1,9 +1,7 @@
-import { execFile as execFileCb } from 'node:child_process';
 import { createWriteStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
-import { promisify } from 'node:util';
 import type {
   IAdapterCapabilities,
   IChapter,
@@ -13,10 +11,8 @@ import type {
 } from '../types.js';
 import { detectPlatform, extractLoomId } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
-import { findYtDlp } from '../utils/ytdlp.js';
+import { findYtDlp, runYtDlp } from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
-
-const execFile = promisify(execFileCb);
 
 const LOOM_GRAPHQL_URL = 'https://www.loom.com/graphql';
 
@@ -221,7 +217,7 @@ export class LoomAdapter implements IVideoAdapter {
     const ytDlp = await findYtDlp();
     if (ytDlp) {
       try {
-        await execFile(ytDlp.bin, [...ytDlp.prefix, '-o', outputPath, '--no-warnings', '-q', url], {
+        await runYtDlp(ytDlp, ['-o', outputPath, '--no-warnings', '-q', url], {
           timeout: 120000,
         });
         if (existsSync(outputPath)) return outputPath;

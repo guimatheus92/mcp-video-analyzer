@@ -61,10 +61,13 @@ Returns: A single image of the video frame at the specified timestamp.`,
       await progress(0, 'Starting frame extraction...');
 
       const tempDir = await createTempDir();
+      const downloadWarnings: string[] = [];
 
       // Strategy 1: Download video + ffmpeg extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir);
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
+          downloadWarnings.push(w),
+        );
 
         if (videoPath) {
           await progress(50, `Extracting frame at ${timestamp}...`);
@@ -112,7 +115,10 @@ Returns: A single image of the video frame at the specified timestamp.`,
       }
 
       throw new UserError(
-        'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
+        [
+          'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
+          ...downloadWarnings,
+        ].join(' '),
       );
     },
   });

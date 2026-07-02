@@ -61,7 +61,7 @@ export interface TranscribeOptions {
 }
 
 /**
- * Mean-volume floor (dBFS): tracks quieter than this are treated as silent
+ * Mean-volume floor (dBFS): tracks at or below this are treated as silent
  * (muted screen recordings, silent Reels/Stories) and skip Whisper entirely,
  * so an empty transcript reads as content instead of a transcription failure.
  */

@@ -74,10 +74,13 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       await progress(0, `Starting burst extraction (${from} → ${to})...`);
 
       const tempDir = await createTempDir();
+      const downloadWarnings: string[] = [];
 
       // Strategy 1: Download video + ffmpeg burst extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir);
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
+          downloadWarnings.push(w),
+        );
 
         if (videoPath) {
           await progress(40, 'Video downloaded, extracting burst frames...');
@@ -150,7 +153,10 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       }
 
       throw new UserError(
-        'Failed to extract frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
+        [
+          'Failed to extract frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
+          ...downloadWarnings,
+        ].join(' '),
       );
     },
   });

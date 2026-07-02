@@ -11,12 +11,12 @@ const YTDLP_PATTERNS: RegExp[] = [
   /^https?:\/\/youtu\.be\/[\w-]+/i,
   /^https?:\/\/(?:www\.)?vimeo\.com\/\d+/i,
   /^https?:\/\/(?:www\.)?tiktok\.com\/@[^/]+\/video\/\d+/i,
-  /^https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p|tv)\//i,
+  /^https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p|tv)\/[\w-]+/i,
   /^https?:\/\/(?:www\.|mobile\.)?(?:twitter|x)\.com\/[^/]+\/status\/\d+/i,
   /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?:videos\/\d+|[^/]+\/clip\/)/i,
   /^https?:\/\/clips\.twitch\.tv\/[\w-]+/i,
   /^https?:\/\/(?:www\.)?dailymotion\.com\/video\/\w+/i,
-  /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=|[^/]+\/videos\/|reel\/)/i,
+  /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=\d+|[^/]+\/videos\/\d+|reel\/\d+)/i,
   /^https?:\/\/fb\.watch\/[\w-]+/i,
 ];
 

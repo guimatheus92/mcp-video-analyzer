@@ -18,7 +18,7 @@ No existing video MCP combines **transcripts + visual frames + metadata** in one
 - **yt-dlp** — **required** for YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs; optional for everything else (improves Loom download quality). Install with `pip install yt-dlp`
 - **Chrome/Chromium** (optional) — fallback for frame extraction if yt-dlp is unavailable
 
-> Without yt-dlp or Chrome, the server still works for Loom, direct URLs, and local files — you'll get transcripts, metadata, and comments, just no frames. Platform URLs (YouTube etc.) degrade to a clear "install yt-dlp" warning.
+> Without yt-dlp or Chrome, direct URLs and local files still get frames — the bundled `ffmpeg-static` does the extraction, and Loom falls back to its own CDN download. Platform URLs (YouTube etc.) degrade to a clear "install yt-dlp" warning. Transcripts, metadata, and comments never require either.
 
 ### Claude Code (CLI)
 

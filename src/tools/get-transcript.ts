@@ -109,7 +109,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
           try {
             await progress(45, 'No native transcript, downloading video for Whisper...');
             tempDir = await createTempDir();
-            const videoPath = await adapter.downloadVideo(url, tempDir);
+            const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
             if (videoPath) {
               await progress(65, 'Transcribing audio with Whisper...');
               const audioPath = await extractAudioTrack(videoPath, tempDir);

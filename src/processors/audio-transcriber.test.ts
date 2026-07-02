@@ -85,6 +85,28 @@ describe('transcribeAudio', () => {
       await cleanupTempDir(tempDir);
     }
   });
+
+  it('does not gate an audible track (threshold-drift canary)', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const toneWav = join(tempDir, 'tone.wav');
+      await execFile(
+        ffmpegPath,
+        ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000', '-t', '1', toneWav, '-y'],
+        { timeout: 30000 },
+      );
+
+      const warnings: string[] = [];
+      // All strategies are stubbed off in beforeEach, so [] is expected — the
+      // observable is the absence of the silence warning.
+      const result = await transcribeAudio(toneWav, {}, (w) => warnings.push(w));
+
+      expect(result).toEqual([]);
+      expect(warnings.some((w) => w.includes('silent'))).toBe(false);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
 });
 
 describe('parseMeanVolume', () => {

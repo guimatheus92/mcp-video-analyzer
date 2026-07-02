@@ -102,7 +102,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       // Strategy 1: Download + ffmpeg
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir);
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
         if (videoPath) {
           await progress(40, 'Video downloaded, extracting frames...');
 

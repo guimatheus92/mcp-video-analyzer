@@ -51,6 +51,11 @@ export function getDetailConfig(level: DetailLevel): DetailConfig {
  * standard level scales with duration, and other levels keep their fixed config
  * (brief=0; detailed=60 — dense 1fps sampling already self-scales under the cap).
  * Unknown duration (<=0) falls back to the fixed config value.
+ *
+ * Changing these tiers changes cached-result identity for adaptive-default runs
+ * (the resolved budget is not part of the cache/sidecar key) — bump
+ * SIDECAR_VERSION in analysis-sidecar.ts when touching them, or persisted
+ * sidecars keep serving the old frame counts.
  */
 export function resolveMaxFrames(
   explicit: number | undefined,

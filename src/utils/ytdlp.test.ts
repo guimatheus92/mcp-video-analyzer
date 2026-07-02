@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { findYtDlp, ytdlpCookieArgs } from './ytdlp.js';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { findYtDlp, resetYtDlpLocator, ytdlpCookieArgs } from './ytdlp.js';
 
 type ExecCallback = (err: Error | null, stdout: string, stderr: string) => void;
 
@@ -14,11 +14,35 @@ vi.mock('node:child_process', () => ({
 }));
 
 describe('findYtDlp', () => {
+  beforeEach(() => {
+    resetYtDlpLocator();
+  });
+
   afterEach(() => {
     execHandler = () => new Error('not found');
   });
 
   it('prefers the yt-dlp binary on PATH', async () => {
+    execHandler = (cmd) => (cmd === 'yt-dlp' ? null : new Error('not found'));
+    expect(await findYtDlp()).toEqual({ bin: 'yt-dlp', prefix: [] });
+  });
+
+  it('caches a successful probe for the process lifetime', async () => {
+    let probes = 0;
+    execHandler = (cmd) => {
+      if (cmd === 'yt-dlp') {
+        probes++;
+        return null;
+      }
+      return new Error('not found');
+    };
+    await findYtDlp();
+    await findYtDlp();
+    expect(probes).toBe(1);
+  });
+
+  it('does not cache failures — install-then-retry works without a restart', async () => {
+    expect(await findYtDlp()).toBeNull();
     execHandler = (cmd) => (cmd === 'yt-dlp' ? null : new Error('not found'));
     expect(await findYtDlp()).toEqual({ bin: 'yt-dlp', prefix: [] });
   });

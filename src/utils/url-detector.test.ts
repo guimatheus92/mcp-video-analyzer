@@ -88,6 +88,19 @@ describe('detectPlatform', () => {
     expect(detectPlatform('https://vimeo.com/user12345')).toBeNull();
   });
 
+  it('rejects listing pages that lack a video id', () => {
+    expect(detectPlatform('https://www.instagram.com/reels/')).toBeNull(); // Reels feed
+    expect(detectPlatform('https://www.facebook.com/somepage/videos/')).toBeNull(); // videos tab
+    expect(detectPlatform('https://www.facebook.com/reel/')).toBeNull();
+    expect(detectPlatform('https://www.facebook.com/watch/')).toBeNull();
+  });
+
+  it('accepts id-bearing variants of the tightened patterns', () => {
+    expect(detectPlatform('https://www.instagram.com/reels/AbC12_3/')).toBe('ytdlp');
+    expect(detectPlatform('https://www.facebook.com/reel/1234567890')).toBe('ytdlp');
+    expect(detectPlatform('https://www.facebook.com/somepage/videos/9876543210/')).toBe('ytdlp');
+  });
+
   it('returns null for HTML pages', () => {
     expect(detectPlatform('https://example.com/page.html')).toBeNull();
   });

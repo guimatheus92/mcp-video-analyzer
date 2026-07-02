@@ -163,6 +163,20 @@ describe('cacheKey', () => {
     expect(key1).toBe(key2);
   });
 
+  it('treats an undefined maxFrames as absent (adaptive-default identity)', () => {
+    const url = 'https://example.com/video.mp4';
+    expect(cacheKey(url, { detail: 'standard', maxFrames: undefined })).toBe(
+      cacheKey(url, { detail: 'standard' }),
+    );
+  });
+
+  it('keys an explicit maxFrames separately from the adaptive default', () => {
+    const url = 'https://example.com/video.mp4';
+    expect(cacheKey(url, { detail: 'standard', maxFrames: 20 })).not.toBe(
+      cacheKey(url, { detail: 'standard' }),
+    );
+  });
+
   it('handles URL without params', () => {
     const key = cacheKey('https://example.com/video.mp4');
     expect(key).toHaveLength(16);

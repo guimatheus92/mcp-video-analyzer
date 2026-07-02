@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
+import { resetYtDlpLocator } from '../utils/ytdlp.js';
 import { YtDlpAdapter, collapseRollingCaptions } from './ytdlp.adapter.js';
 
 interface ExecResult {
@@ -21,10 +22,10 @@ vi.mock('node:child_process', () => {
   const execFile = () => {
     throw new Error('callback execFile path not used in these tests');
   };
-  (execFile as unknown as Record<symbol, unknown>)[Symbol.for('nodejs.util.promisify.custom')] = (
-    cmd: string,
-    args: string[],
-  ) => execHandler(cmd, args);
+  // async so a synchronous throw from the handler becomes a rejection —
+  // Node's real promisified execFile never throws synchronously.
+  (execFile as unknown as Record<symbol, unknown>)[Symbol.for('nodejs.util.promisify.custom')] =
+    async (cmd: string, args: string[]) => execHandler(cmd, args);
   return { execFile };
 });
 
@@ -73,6 +74,7 @@ describe('YtDlpAdapter', () => {
     vi.stubEnv('YTDLP_COOKIES', '');
     vi.stubEnv('YTDLP_COOKIES_FROM_BROWSER', '');
     vi.stubEnv('WHISPER_LANGUAGE', '');
+    resetYtDlpLocator();
   });
 
   afterEach(() => {
@@ -141,6 +143,21 @@ describe('YtDlpAdapter', () => {
       expect(idx).toBeGreaterThan(-1);
       expect(captured[idx + 1]).toBe('chrome');
     });
+
+    it('shares one -J process between concurrent getMetadata and getChapters', async () => {
+      let jCalls = 0;
+      execHandler = fixtureHandler(() => {
+        jCalls++;
+      });
+      const freshAdapter = new YtDlpAdapter();
+      const [meta, chapters] = await Promise.all([
+        freshAdapter.getMetadata('https://youtu.be/abc123'),
+        freshAdapter.getChapters('https://youtu.be/abc123'),
+      ]);
+      expect(meta.title).toBe('Sample YouTube Video');
+      expect(chapters).toHaveLength(3);
+      expect(jCalls).toBe(1);
+    });
   });
 
   describe('getTranscript', () => {
@@ -188,6 +205,44 @@ describe('YtDlpAdapter', () => {
       expect(await adapter.getTranscript('https://youtu.be/abc123')).toEqual([]);
     });
 
+    it('throws the yt-dlp ERROR when both passes fail (not mislabeled as captionless)', async () => {
+      execHandler = (_cmd, args) => {
+        if (args.includes('--version')) return ok();
+        throw Object.assign(new Error('Command failed'), {
+          stderr: 'ERROR: Sign in to confirm your age\n',
+        });
+      };
+      await expect(adapter.getTranscript('https://youtu.be/abc123')).rejects.toThrow(
+        'ERROR: Sign in to confirm your age',
+      );
+    });
+
+    it('prefers the WHISPER_LANGUAGE subtitle when multiple are on disk', async () => {
+      vi.stubEnv('WHISPER_LANGUAGE', 'pt');
+      let subLangs = '';
+      execHandler = (_cmd, args) => {
+        if (args.includes('--version')) return ok();
+        if (args.includes('--skip-download')) {
+          subLangs = args[args.indexOf('--sub-langs') + 1];
+          const outBase = args[args.indexOf('-o') + 1];
+          writeFileSync(
+            `${outBase}.en.vtt`,
+            'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nHello world\n',
+          );
+          writeFileSync(
+            `${outBase}.pt.vtt`,
+            'WEBVTT\n\n00:00:01.000 --> 00:00:03.000\nOlá mundo\n',
+          );
+          return ok();
+        }
+        throw new Error('unexpected');
+      };
+
+      const transcript = await adapter.getTranscript('https://youtu.be/abc123');
+      expect(transcript.map((e) => e.text)).toEqual(['Olá mundo']);
+      expect(subLangs).toBe('pt.*,en.*');
+    });
+
     it('rejects with an install hint when yt-dlp is missing', async () => {
       await expect(adapter.getTranscript('https://youtu.be/abc123')).rejects.toThrow(
         'yt-dlp is not installed',
@@ -232,14 +287,39 @@ describe('YtDlpAdapter', () => {
       }
     });
 
-    it('returns null when the download fails', async () => {
+    it('returns null when the download fails, reporting the reason via onWarning', async () => {
       const tempDir = await createTempDir();
       try {
         execHandler = (_cmd, args) => {
           if (args.includes('--version')) return ok();
-          throw new Error('network error');
+          throw Object.assign(new Error('Command failed'), {
+            stderr: 'ERROR: Requested format is not available\n',
+          });
         };
-        expect(await adapter.downloadVideo('https://youtu.be/abc123', tempDir)).toBeNull();
+        const warnings: string[] = [];
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) =>
+          warnings.push(w),
+        );
+        expect(path).toBeNull();
+        expect(warnings.join(' ')).toContain('ERROR: Requested format is not available');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('warns about skipped live streams when yt-dlp succeeds without a file', async () => {
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          return ok(); // exit 0, no file written — the --match-filter !is_live case
+        };
+        const warnings: string[] = [];
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) =>
+          warnings.push(w),
+        );
+        expect(path).toBeNull();
+        expect(warnings.join(' ')).toContain('live streams are skipped');
       } finally {
         await cleanupTempDir(tempDir);
       }
@@ -273,5 +353,16 @@ describe('collapseRollingCaptions', () => {
       { time: '0:06', text: 'next line' },
     ];
     expect(collapseRollingCaptions(entries).map((e) => e.text)).toEqual(['same line', 'next line']);
+  });
+
+  it('never trims mid-word: "…same liNE" × "NExt line…" stays intact', () => {
+    const entries = [
+      { time: '0:00', text: 'on the same line' },
+      { time: '0:02', text: 'next line here' },
+    ];
+    expect(collapseRollingCaptions(entries).map((e) => e.text)).toEqual([
+      'on the same line',
+      'next line here',
+    ]);
   });
 });

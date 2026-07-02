@@ -1,8 +1,6 @@
-import { execFile as execFileCb } from 'node:child_process';
 import { readFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
-import { promisify } from 'node:util';
 import { formatTimestamp } from '../processors/frame-extractor.js';
 import type {
   IAdapterCapabilities,
@@ -14,10 +12,8 @@ import type {
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { detectPlatform } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
-import { findYtDlp, ytdlpCookieArgs } from '../utils/ytdlp.js';
+import { findYtDlp, runYtDlp, ytdlpCookieArgs } from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
-
-const execFile = promisify(execFileCb);
 
 const require = createRequire(import.meta.url);
 const ffmpegPath: string = require('ffmpeg-static') as string;
@@ -134,8 +130,11 @@ export class YtDlpAdapter implements IVideoAdapter {
 
   /**
    * Native captions via yt-dlp: uploaded subtitles first, auto-generated as a
-   * fallback (with rolling-window collapse). Returns [] when the video has no
-   * captions at all, so the pipeline downloads the video and runs Whisper.
+   * fallback (with rolling-window collapse). Returns [] only when yt-dlp exited
+   * cleanly and produced no subtitle files (the video has no captions) — the
+   * pipeline then downloads the video and runs Whisper. A failed fetch throws,
+   * so callers surface it as a "Failed to fetch transcript" warning instead of
+   * mislabeling the video as captionless.
    */
   async getTranscript(url: string): Promise<ITranscriptEntry[]> {
     const ytDlp = await findYtDlp();
@@ -146,7 +145,6 @@ export class YtDlpAdapter implements IVideoAdapter {
       const lang = process.env.WHISPER_LANGUAGE?.trim() || undefined;
       const subLangs = lang ? `${lang}.*,en.*` : 'en.*';
       const baseArgs = [
-        ...ytDlp.prefix,
         '--skip-download',
         '--write-subs',
         '--sub-format',
@@ -160,17 +158,24 @@ export class YtDlpAdapter implements IVideoAdapter {
       ];
 
       // Pass 1: uploaded subtitles only (clean cues, no collapse needed).
-      await execFile(ytDlp.bin, baseArgs, { timeout: 60000 }).catch(() => undefined);
+      // A rejection here is swallowed because pass 2 retries --write-subs too.
+      await runYtDlp(ytDlp, baseArgs, { timeout: 60000 }).catch(() => undefined);
       let vtt = await readBestSubtitle(dir, lang);
       if (vtt) return parseVtt(vtt);
 
-      // Pass 2: auto-generated captions.
+      // Pass 2: auto-generated captions (retries uploaded subs as well).
       const autoArgs = [...baseArgs];
       autoArgs.splice(autoArgs.indexOf('--write-subs') + 1, 0, '--write-auto-subs');
-      await execFile(ytDlp.bin, autoArgs, { timeout: 60000 }).catch(() => undefined);
+      let pass2Error: unknown;
+      await runYtDlp(ytDlp, autoArgs, { timeout: 60000 }).catch((e: unknown) => {
+        pass2Error = e;
+      });
       vtt = await readBestSubtitle(dir, lang);
       if (vtt) return collapseRollingCaptions(parseVtt(vtt));
 
+      if (pass2Error) {
+        throw new Error(extractYtDlpError(pass2Error), { cause: pass2Error });
+      }
       return [];
     } finally {
       await cleanupTempDir(dir).catch(() => undefined);
@@ -182,14 +187,16 @@ export class YtDlpAdapter implements IVideoAdapter {
   }
 
   async getChapters(url: string): Promise<IChapter[]> {
-    // Own fetchInfo call: runs concurrently with getMetadata in the pipeline's
-    // Promise.all. Quiet catch — the metadata leg already carries the warning.
+    // Shares the in-flight -J with getMetadata (pipeline's Promise.all).
+    // Quiet catch — the metadata leg already carries the warning.
     try {
       const info = await this.fetchInfo(url);
-      return (info.chapters ?? []).map((c) => ({
-        time: formatTimestamp(Math.floor(c.start_time)),
-        title: c.title,
-      }));
+      return (info.chapters ?? [])
+        .filter((c) => Number.isFinite(c?.start_time))
+        .map((c) => ({
+          time: formatTimestamp(Math.floor(c.start_time)),
+          title: c.title,
+        }));
     } catch {
       return [];
     }
@@ -200,22 +207,26 @@ export class YtDlpAdapter implements IVideoAdapter {
   }
 
   /** Never rejects — the pipeline calls this without a catch (Loom precedent). */
-  async downloadVideo(url: string, destDir: string): Promise<string | null> {
+  async downloadVideo(
+    url: string,
+    destDir: string,
+    onWarning?: (message: string) => void,
+  ): Promise<string | null> {
     const ytDlp = await findYtDlp();
     if (!ytDlp) return null;
 
     try {
-      await execFile(
-        ytDlp.bin,
+      await runYtDlp(
+        ytDlp,
         [
-          ...ytDlp.prefix,
           '-o',
           join(destDir, 'video.%(ext)s'),
           ...commonArgs(),
           // Live streams would otherwise record until the 300s timeout kills them.
           '--match-filter',
           '!is_live',
-          // Frames/OCR don't need more than 1080p; caps 4K download time.
+          // Prefers ≤1080p when available (frames/OCR don't need more); sources
+          // offering only higher resolutions still download.
           '-S',
           'res:1080',
           // Lets yt-dlp merge DASH video+audio without a system ffmpeg.
@@ -226,7 +237,8 @@ export class YtDlpAdapter implements IVideoAdapter {
         ],
         { timeout: 300000 },
       );
-    } catch {
+    } catch (err: unknown) {
+      onWarning?.(`Video download failed: ${extractYtDlpError(err)}`);
       return null;
     }
 
@@ -234,18 +246,35 @@ export class YtDlpAdapter implements IVideoAdapter {
       // Merged output may be .mp4/.webm/.mkv depending on the source formats.
       const files = await readdir(destDir);
       const video = files.find((f) => f.startsWith('video.'));
-      return video ? join(destDir, video) : null;
+      if (video) return join(destDir, video);
+      onWarning?.(
+        'yt-dlp finished without producing a file — live streams are skipped by design (recordings only).',
+      );
+      return null;
     } catch {
       return null;
     }
   }
 
-  private async fetchInfo(url: string): Promise<YtDlpInfo> {
+  // In-flight -J memo: getMetadata and getChapters run concurrently in the
+  // pipeline's Promise.all — share one yt-dlp process per URL. Deleted on
+  // settle, so forceRefresh and later calls still re-fetch.
+  private readonly infoInFlight = new Map<string, Promise<YtDlpInfo>>();
+
+  private fetchInfo(url: string): Promise<YtDlpInfo> {
+    const existing = this.infoInFlight.get(url);
+    if (existing) return existing;
+    const info = this.doFetchInfo(url).finally(() => this.infoInFlight.delete(url));
+    this.infoInFlight.set(url, info);
+    return info;
+  }
+
+  private async doFetchInfo(url: string): Promise<YtDlpInfo> {
     const ytDlp = await findYtDlp();
     if (!ytDlp) throw new Error(YTDLP_MISSING);
 
     try {
-      const { stdout } = await execFile(ytDlp.bin, [...ytDlp.prefix, '-J', ...commonArgs(), url], {
+      const { stdout } = await runYtDlp(ytDlp, ['-J', ...commonArgs(), url], {
         timeout: 30000,
         maxBuffer: INFO_MAX_BUFFER,
       });

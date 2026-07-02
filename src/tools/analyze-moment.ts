@@ -111,9 +111,12 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
         );
       }
 
-      const videoPath = await adapter.downloadVideo(url, tempDir);
+      const downloadWarnings: string[] = [];
+      const videoPath = await adapter.downloadVideo(url, tempDir, (w) => downloadWarnings.push(w));
       if (!videoPath) {
-        throw new UserError('Failed to download video for moment analysis.');
+        throw new UserError(
+          ['Failed to download video for moment analysis.', ...downloadWarnings].join(' '),
+        );
       }
 
       await progress(35, 'Video downloaded, extracting burst frames...');
