@@ -31,7 +31,8 @@ const SIDECAR_VERSION = 1;
  */
 export interface ResultDefiningParams {
   detail: string;
-  maxFrames: number;
+  /** Absent = duration-adaptive default (resolved at runtime, not part of the key). */
+  maxFrames?: number;
   threshold: number;
   ocrLanguage: string;
   model?: string;

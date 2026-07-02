@@ -1,7 +1,7 @@
 import { imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
-import { getDetailConfig } from '../config/detail-levels.js';
+import { getDetailConfig, resolveMaxFrames } from '../config/detail-levels.js';
 import type { DetailLevel } from '../config/detail-levels.js';
 import { buildAnnotatedTimeline } from '../processors/annotated-timeline.js';
 import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcriber.js';
@@ -51,7 +51,9 @@ export const AnalyzeOptionsSchema = z
       .min(1)
       .max(60)
       .optional()
-      .describe('Maximum number of key frames to extract (default depends on detail level)'),
+      .describe(
+        'Maximum key frames to extract. Default scales with video duration at standard detail (~12 for ≤30s up to 60 for >10min); fixed 60 at detailed, 0 at brief.',
+      ),
     threshold: z
       .number()
       .min(0)
@@ -107,7 +109,8 @@ export type AnalyzeOptions = z.infer<typeof AnalyzeOptionsSchema>;
 /** Fully-resolved analysis parameters (defaults applied). */
 export interface AnalyzeParams {
   detail: DetailLevel;
-  maxFrames: number;
+  /** `undefined` = duration-adaptive default, resolved after metadata is known. */
+  maxFrames: number | undefined;
   threshold: number;
   skipFrames: boolean;
   ocrLanguage: string;
@@ -121,7 +124,7 @@ export function resolveAnalyzeParams(options: AnalyzeOptions): AnalyzeParams {
   const config = getDetailConfig(detail);
   return {
     detail,
-    maxFrames: options?.maxFrames ?? config.maxFrames,
+    maxFrames: options?.maxFrames,
     threshold: options?.threshold ?? 0.1,
     skipFrames: options?.skipFrames ?? !config.includeFrames,
     ocrLanguage: options?.ocrLanguage ?? 'eng+por',
@@ -164,7 +167,7 @@ async function runAnalysisPipeline(
 ): Promise<{ result: IAnalysisResult; transcriptFromWhisper: boolean; tempDir: string | null }> {
   const adapter = getAdapter(url);
   const config = getDetailConfig(params.detail);
-  const { maxFrames, threshold, skipFrames, ocrLanguage } = params;
+  const { threshold, skipFrames, ocrLanguage } = params;
 
   const warnings: string[] = [];
   let tempDir: string | null = null;
@@ -244,7 +247,7 @@ async function runAnalysisPipeline(
 
           const extraction = await extractKeyFrames(videoPath, tempDir, {
             threshold,
-            maxFrames,
+            maxFrames: resolveMaxFrames(params.maxFrames, params.detail, metadata.duration),
             dense: config.denseSampling,
           });
           warnings.push(...extraction.warnings);
@@ -277,7 +280,10 @@ async function runAnalysisPipeline(
       if (!framesExtracted && !isLocal && metadata.duration > 0) {
         await progress(50, 'Extracting frames via browser fallback...');
 
-        const timestamps = generateTimestamps(metadata.duration, maxFrames);
+        const timestamps = generateTimestamps(
+          metadata.duration,
+          resolveMaxFrames(params.maxFrames, params.detail, metadata.duration),
+        );
         const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps }).catch(
           (e: unknown) => {
             warnings.push(

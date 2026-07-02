@@ -195,10 +195,10 @@ describe('resolveAnalyzeParams', () => {
     });
   });
 
-  it('applies detail-level defaults (standard → 20 scene frames)', () => {
+  it('leaves maxFrames undefined by default (duration-adaptive, resolved later)', () => {
     const params = resolveAnalyzeParams({});
     expect(params.detail).toBe('standard');
-    expect(params.maxFrames).toBe(20);
+    expect(params.maxFrames).toBeUndefined();
     expect(params.skipFrames).toBe(false);
     expect(params.ocrLanguage).toBe('eng+por');
   });

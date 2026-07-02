@@ -45,3 +45,23 @@ export const DETAIL_CONFIGS: Record<DetailLevel, DetailConfig> = {
 export function getDetailConfig(level: DetailLevel): DetailConfig {
   return DETAIL_CONFIGS[level];
 }
+
+/**
+ * Effective frame budget: an explicit caller value always wins; otherwise the
+ * standard level scales with duration, and other levels keep their fixed config
+ * (brief=0; detailed=60 — dense 1fps sampling already self-scales under the cap).
+ * Unknown duration (<=0) falls back to the fixed config value.
+ */
+export function resolveMaxFrames(
+  explicit: number | undefined,
+  level: DetailLevel,
+  durationSeconds: number,
+): number {
+  if (explicit !== undefined) return explicit;
+  if (level !== 'standard' || durationSeconds <= 0) return DETAIL_CONFIGS[level].maxFrames;
+  if (durationSeconds <= 30) return 12;
+  if (durationSeconds <= 60) return 20;
+  if (durationSeconds <= 180) return 30;
+  if (durationSeconds <= 600) return 45;
+  return 60;
+}
