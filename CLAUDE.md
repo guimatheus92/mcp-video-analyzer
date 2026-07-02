@@ -61,7 +61,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 2. **Run checks**: `npm run check` (format, lint, typecheck, knip, tests).
 3. **Run smoke test**: `npm run test:smoke` (verifies MCP server starts and responds).
 4. **Run package verification**: `npm run verify-package` (packs tarball, installs in temp dir, verifies startup).
-5. **Validate the Docker image from a clean clone** (Glama CI builds it from git on every release — `dist/` is gitignored, so the image must compile itself): `git archive HEAD -o sim.tar` → extract to an empty dir → `docker build` there → send an MCP `initialize` to `docker run -i` and expect a response. A build that only works with a locally pre-built `dist/` WILL fail on Glama and email the maintainer.
+5. **Docker image validation** — the `docker-image` CI job runs it on every PR (build from clean clone + ffmpeg present + MCP `initialize` answered), replicating what Glama CI does on each release; `dist/` is gitignored, so the image must compile itself. Confirm the job is green before releasing. Manual fallback: `git archive HEAD -o sim.tar` → extract to an empty dir → `docker build` there → pipe an MCP `initialize` into `docker run -i`. A build that only works with a locally pre-built `dist/` WILL fail on Glama and email the maintainer.
 6. **Commit & push**: commit version bump to main.
 7. **Publish to npm**: `npm publish`.
 8. **Create GitHub release**: `gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes`.
