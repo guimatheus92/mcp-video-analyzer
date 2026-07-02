@@ -33,3 +33,22 @@ jobs:
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e
+
+  # Replicates what Glama CI does on every release: build the Dockerfile from
+  # a fresh clone (dist/ is gitignored — the image must compile itself) and
+  # prove the container actually works. See CLAUDE.md → Publishing.
+  docker-image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build image from clean clone
+        run: docker build -t mcp-video-analyzer:ci .
+      - name: Verify ffmpeg binary inside the image
+        run: >
+          docker run --rm --entrypoint node mcp-video-analyzer:ci
+          -e "const p=require('ffmpeg-static');if(!require('fs').existsSync(p)){console.error('ffmpeg binary missing:',p);process.exit(1)}console.log('ffmpeg ok:',p)"
+      - name: Verify MCP server answers initialize
+        run: |
+          RESPONSE=$(echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"ci","version":"1.0"}}}' | timeout 30 docker run -i --rm mcp-video-analyzer:ci | head -n 1)
+          echo "$RESPONSE" | grep -q '"result"' || { echo "No initialize result. Got: $RESPONSE"; exit 1; }
+          echo "MCP initialize OK"
