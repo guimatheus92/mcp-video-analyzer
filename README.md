@@ -6,7 +6,7 @@
 
 Featured in [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process).
 
-MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs and local video files. Supports Loom, direct video URLs (.mp4, .mov, .mkv, .webm, and other common formats), and absolute paths to local video files.
+MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs and local video files. Supports Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook (via yt-dlp), direct video URLs (.mp4, .mov, .mkv, .webm, and other common formats), and absolute paths to local video files.
 
 No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does.
 
@@ -15,10 +15,10 @@ No existing video MCP combines **transcripts + visual frames + metadata** in one
 ### Prerequisites
 
 - **Node.js 18+** — required to run the server via `npx`
-- **yt-dlp** (optional) — enables frame extraction via ffmpeg. Install with `pip install yt-dlp`
+- **yt-dlp** — **required** for YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs; optional for everything else (improves Loom download quality). Install with `pip install yt-dlp`
 - **Chrome/Chromium** (optional) — fallback for frame extraction if yt-dlp is unavailable
 
-> Without yt-dlp or Chrome, the server still works — you'll get transcripts, metadata, and comments, just no frames.
+> Without yt-dlp or Chrome, the server still works for Loom, direct URLs, and local files — you'll get transcripts, metadata, and comments, just no frames. Platform URLs (YouTube etc.) degrade to a clear "install yt-dlp" warning.
 
 ### Claude Code (CLI)
 
@@ -103,7 +103,7 @@ The AI will **automatically** call this tool when it sees a video URL — no nee
 Options:
 - `detail` — analysis depth: `"brief"` (metadata + truncated transcript, no frames), `"standard"` (default), `"detailed"` (dense sampling, more frames)
 - `fields` — array of specific fields to return, e.g. `["metadata", "transcript"]`. Available: `metadata`, `transcript`, `frames`, `comments`, `chapters`, `ocrResults`, `timeline`, `aiSummary`
-- `maxFrames` (1-60, default depends on detail level) — cap on extracted frames
+- `maxFrames` (1-60) — cap on extracted frames. Default scales with video duration at `standard` detail (~12 for ≤30s up to 60 for >10min); fixed 60 at `detailed`, 0 at `brief`. An explicit value always wins
 - `threshold` (0.0-1.0, default 0.1) — scene-change sensitivity
 - `forceRefresh` — bypass cache and re-analyze
 - `skipFrames` — skip frame extraction for transcript-only analysis
@@ -172,7 +172,7 @@ For motion, vibration, animations, or fast scrolling — burst mode captures N f
 | Level | Frames | Transcript | OCR | Timeline | Use case |
 |-------|--------|-----------|-----|----------|----------|
 | `brief` | None | First 10 entries | No | No | Quick check — what's this video about? |
-| `standard` | Up to 20 (scene-change) | Full | Yes | Yes | Default — full analysis |
+| `standard` | Duration-adaptive: ~12 (≤30s) up to 60 (>10min), scene-change | Full | Yes | Yes | Default — full analysis |
 | `detailed` | Up to 60 (1fps dense) | Full | Yes | Yes | Deep analysis — every second captured |
 
 ## Caching
@@ -193,6 +193,7 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 | Source | Transcript | Metadata | Comments | Frames | Auth |
 |--------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes | None |
+| **YouTube / Vimeo / TikTok / Instagram / X / Twitch / Dailymotion / Facebook** | Native captions (uploaded > auto-generated) or Whisper fallback | Yes (title, duration, uploader, views, chapters, upload date) | No | Yes (capped at 1080p) | yt-dlp installed; cookies for Instagram / age-restricted (see below) |
 | **Direct URL** (.mp4, .mov, .mkv, .webm, …) | No | Duration only | No | Yes | None |
 | **Direct URL + TwelveLabs** | Yes (Pegasus, best-effort) | Duration floor + title | No | Yes | `TWELVELABS_API_KEY` |
 | **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
@@ -204,6 +205,22 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 > **Embedded subtitles**: if no sidecar is found and the container has an embedded subtitle stream (common in `.mkv` / `.mov` / `.mp4` from screen recorders), it's transmuxed to VTT via ffmpeg and used as the transcript.
 >
 > **Recognized extensions** (local files and direct URLs): `.mp4` `.mov` `.mkv` `.webm` `.avi` `.m4v` `.wmv` `.flv` `.mpeg` `.mpg` `.m2ts` `.mts` `.3gp` `.ogv`. The extension only gates routing — ffmpeg does the actual demuxing, so most common containers work. `.ts` is excluded to avoid colliding with TypeScript source files.
+
+### Platform URLs via yt-dlp (YouTube, Instagram, TikTok, …)
+
+Single-video pages on major platforms route through [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp` — required for these URLs). Playlists, channels, and profile pages are rejected by design; pass individual video URLs (batch them with `analyze_videos`).
+
+- **Transcript**: native captions are preferred and free — uploaded subtitles first, auto-generated captions as fallback (rolling-window duplication is collapsed). `WHISPER_LANGUAGE` (e.g. `pt`) is also used to pick the caption language. Videos with no captions at all fall through to the normal Whisper chain.
+- **Metadata**: title, duration, uploader/channel, view count, upload date, and chapters — no download needed.
+- **Download**: capped at 1080p (frames/OCR don't need more), live streams are skipped, and DASH audio+video is merged with the bundled `ffmpeg-static` (no system ffmpeg required).
+- **Cookies** — Instagram and age-restricted videos usually require a logged-in session:
+
+| Env var | What it does | Example |
+|---------|-------------|---------|
+| `YTDLP_COOKIES` | Cookie file (Netscape format), wins when both are set | `C:/secrets/cookies.txt` |
+| `YTDLP_COOKIES_FROM_BROWSER` | Extract cookies from an installed browser | `chrome`, `edge`, `firefox` |
+
+> Browser cookie extraction requires the browser to be **closed** on Windows (the cookie database is locked while it runs). If that's inconvenient, export a `cookies.txt` once (e.g. with a "Get cookies.txt" browser extension) and point `YTDLP_COOKIES` at it. Private/age-restricted videos without valid cookies don't crash the tool — the yt-dlp `ERROR:` line surfaces in `warnings[]`.
 
 ### TwelveLabs Pegasus (optional)
 
@@ -219,7 +236,9 @@ It's fully opt-in and non-breaking: when `TWELVELABS_API_KEY` is set the `Twelve
 
 ### Transcription (Whisper fallback)
 
-When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded subtitles), the audio track is transcribed with Whisper via a graceful fallback chain (in execution order):
+When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded subtitles, no platform captions), the audio track is transcribed with Whisper via a graceful fallback chain (in execution order):
+
+> **Silent tracks**: before any Whisper run, the audio is probed with ffmpeg `volumedetect` (first 2 minutes). A present-but-mute track — common in muted Reels/Stories — skips transcription entirely and emits a warning that the empty transcript is **expected content, not an error**, saving a pointless Whisper run.
 
 1. **@huggingface/transformers** (JS-native, zero external deps) — **opt-in only**: this strategy runs *first*, but **only when `WHISPER_HF_MODEL` is explicitly set**. When it's unset (the default) the strategy is skipped entirely, so the CLI below wins and its `WHISPER_MODEL`/`WHISPER_LANGUAGE` settings are never silently overridden.
 2. **`whisper` CLI** — used when a `whisper` executable is found (`pip install -U openai-whisper`). Point `WHISPER_BIN` at the executable if it isn't on `PATH`. Model via `WHISPER_MODEL`, language via `WHISPER_LANGUAGE`. The bundled `ffmpeg-static` is put on the CLI's `PATH` automatically, so no system ffmpeg is required.
