@@ -1,5 +1,5 @@
 node_modules
-src
+dist
 test
 scripts
 examples
@@ -7,8 +7,8 @@ examples
 .github
 *.md
 *.config.*
-tsconfig*.json
 .prettierrc
 knip.json
 glama.json
 smithery.yaml
+tsconfig.eslint.json

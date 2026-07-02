@@ -61,17 +61,19 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 2. **Run checks**: `npm run check` (format, lint, typecheck, knip, tests).
 3. **Run smoke test**: `npm run test:smoke` (verifies MCP server starts and responds).
 4. **Run package verification**: `npm run verify-package` (packs tarball, installs in temp dir, verifies startup).
-5. **Commit & push**: commit version bump to main.
-6. **Publish to npm**: `npm publish`.
-7. **Create GitHub release**: `gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes`.
-8. **Update .mcp.json**: pin new version in local MCP config.
-9. **Verify on npm**: `npm view mcp-video-analyzer version`.
+5. **Validate the Docker image from a clean clone** (Glama CI builds it from git on every release — `dist/` is gitignored, so the image must compile itself): `git archive HEAD -o sim.tar` → extract to an empty dir → `docker build` there → send an MCP `initialize` to `docker run -i` and expect a response. A build that only works with a locally pre-built `dist/` WILL fail on Glama and email the maintainer.
+6. **Commit & push**: commit version bump to main.
+7. **Publish to npm**: `npm publish`.
+8. **Create GitHub release**: `gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes`.
+9. **Update .mcp.json**: pin new version in local MCP config.
+10. **Verify on npm**: `npm view mcp-video-analyzer version`.
 
 ### Notes
 
 - Source maps are disabled in tsconfig to reduce package size.
 - `npm publish` runs `prepublishOnly` which executes `npm run check && npm run build` automatically.
 - Never publish without testing as consumer — `npm run check` passing does NOT mean the package works for end users. Always run `npm run verify-package`.
+- The Dockerfile is multi-stage and **self-building** (compiles `src/` in a build stage) — never make it depend on a pre-built `dist/`, and keep `src/` + `tsconfig.json` out of `.dockerignore`. The runtime stage uses `npm ci --omit=dev --ignore-scripts` (the `prepare` script would run tsc without dev deps) followed by `npm rebuild ffmpeg-static` (its postinstall downloads the ffmpeg binary; skipping it ships an image with no frame extraction). Smithery is unaffected (`smithery.yaml` launches via npx).
 
 ## Dependencies
 
