@@ -13,6 +13,7 @@ import type {
 } from '../types.js';
 import { detectPlatform, extractLoomId } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
+import { findYtDlp } from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
 
 const execFile = promisify(execFileCb);
@@ -310,28 +311,4 @@ function flattenComments(comments: LoomComment[]): IVideoComment[] {
   }
 
   return result;
-}
-
-interface YtDlpCommand {
-  bin: string;
-  prefix: string[];
-}
-
-async function findYtDlp(): Promise<YtDlpCommand | null> {
-  for (const bin of ['yt-dlp', 'yt-dlp.exe']) {
-    try {
-      await execFile(bin, ['--version'], { timeout: 5000 });
-      return { bin, prefix: [] };
-    } catch {
-      // not found, try next
-    }
-  }
-
-  // Try python module
-  try {
-    await execFile('python', ['-m', 'yt_dlp', '--version'], { timeout: 5000 });
-    return { bin: 'python', prefix: ['-m', 'yt_dlp'] };
-  } catch {
-    return null;
-  }
 }
