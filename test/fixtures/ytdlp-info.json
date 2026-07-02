@@ -1,0 +1,19 @@
+{
+  "id": "abc123XYZ",
+  "title": "Sample YouTube Video",
+  "description": "A short sample description.",
+  "duration": 212,
+  "uploader": "Sample Channel",
+  "channel": "Sample Channel",
+  "upload_date": "20240115",
+  "view_count": 123456,
+  "thumbnail": "https://i.ytimg.com/vi/abc123XYZ/maxresdefault.jpg",
+  "width": 1920,
+  "height": 1080,
+  "fps": 30,
+  "chapters": [
+    { "start_time": 0, "title": "Intro" },
+    { "start_time": 65, "title": "Main topic" },
+    { "start_time": 190, "title": "Wrap-up" }
+  ]
+}

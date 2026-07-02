@@ -55,12 +55,37 @@ describe('detectPlatform', () => {
     expect(detectPlatform('/Users/me/src/index.ts')).toBeNull();
   });
 
-  it('returns null for YouTube URLs (unsupported in v0.1)', () => {
-    expect(detectPlatform('https://www.youtube.com/watch?v=abc123')).toBeNull();
+  it('detects YouTube URLs as ytdlp', () => {
+    expect(detectPlatform('https://www.youtube.com/watch?v=abc123')).toBe('ytdlp');
+    expect(detectPlatform('https://www.youtube.com/watch?foo=1&v=abc123')).toBe('ytdlp');
+    expect(detectPlatform('https://youtube.com/shorts/abc123')).toBe('ytdlp');
+    expect(detectPlatform('https://m.youtube.com/watch?v=abc123')).toBe('ytdlp');
+    expect(detectPlatform('https://www.youtube.com/live/abc123')).toBe('ytdlp');
+    expect(detectPlatform('https://youtu.be/abc123')).toBe('ytdlp');
   });
 
-  it('returns null for youtu.be URLs (unsupported in v0.1)', () => {
-    expect(detectPlatform('https://youtu.be/abc123')).toBeNull();
+  it('detects other yt-dlp platforms as ytdlp', () => {
+    expect(detectPlatform('https://vimeo.com/123456789')).toBe('ytdlp');
+    expect(detectPlatform('https://www.tiktok.com/@user/video/1234567890')).toBe('ytdlp');
+    expect(detectPlatform('https://www.instagram.com/reel/AbC123/')).toBe('ytdlp');
+    expect(detectPlatform('https://www.instagram.com/p/AbC123/')).toBe('ytdlp');
+    expect(detectPlatform('https://x.com/user/status/1234567890')).toBe('ytdlp');
+    expect(detectPlatform('https://twitter.com/user/status/1234567890')).toBe('ytdlp');
+    expect(detectPlatform('https://www.twitch.tv/videos/123456789')).toBe('ytdlp');
+    expect(detectPlatform('https://www.twitch.tv/streamer/clip/SomeClip-abc')).toBe('ytdlp');
+    expect(detectPlatform('https://clips.twitch.tv/SomeClip-abc')).toBe('ytdlp');
+    expect(detectPlatform('https://www.dailymotion.com/video/x8abc12')).toBe('ytdlp');
+    expect(detectPlatform('https://www.facebook.com/watch?v=1234567890')).toBe('ytdlp');
+    expect(detectPlatform('https://www.facebook.com/somepage/videos/1234567890')).toBe('ytdlp');
+    expect(detectPlatform('https://fb.watch/abc123/')).toBe('ytdlp');
+  });
+
+  it('rejects playlist/channel/profile pages (single videos only)', () => {
+    expect(detectPlatform('https://www.youtube.com/playlist?list=PL123')).toBeNull();
+    expect(detectPlatform('https://www.youtube.com/@somechannel')).toBeNull();
+    expect(detectPlatform('https://www.instagram.com/someuser/')).toBeNull();
+    expect(detectPlatform('https://www.twitch.tv/streamername')).toBeNull();
+    expect(detectPlatform('https://vimeo.com/user12345')).toBeNull();
   });
 
   it('returns null for HTML pages', () => {

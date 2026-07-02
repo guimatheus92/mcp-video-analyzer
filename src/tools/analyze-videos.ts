@@ -13,13 +13,13 @@ const AnalyzeVideosSchema = z.object({
     .array(
       z.string().refine(isVideoSource, {
         message:
-          'Each source must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+          'Each source must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
       }),
     )
     .min(1)
     .max(500)
     .describe(
-      'Video sources to analyze in one batch (Loom URLs, direct video URLs, or local paths).',
+      'Video sources to analyze in one batch (Loom URLs, platform video URLs like YouTube, direct video URLs, or local paths).',
     ),
   options: AnalyzeOptionsSchema.describe('Analysis options applied to every source'),
   concurrency: z

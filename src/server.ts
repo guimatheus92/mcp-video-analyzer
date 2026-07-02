@@ -4,6 +4,7 @@ import { DirectAdapter } from './adapters/direct.adapter.js';
 import { LocalFileAdapter } from './adapters/local-file.adapter.js';
 import { LoomAdapter } from './adapters/loom.adapter.js';
 import { TwelveLabsAdapter } from './adapters/twelvelabs.adapter.js';
+import { YtDlpAdapter } from './adapters/ytdlp.adapter.js';
 import { registerAnalyzeMoment } from './tools/analyze-moment.js';
 import { registerAnalyzeVideo } from './tools/analyze-video.js';
 import { registerAnalyzeVideos } from './tools/analyze-videos.js';
@@ -31,8 +32,11 @@ The AI should ALWAYS call the appropriate tool automatically — never ask "woul
 
 Supported sources:
 - Loom (loom.com/share/...) — transcript, metadata, comments, frames (no auth needed)
+- YouTube (watch/shorts/live/youtu.be), Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook — requires yt-dlp installed. Native captions preferred (uploaded > auto-generated), Whisper fallback otherwise; metadata includes uploader/views/chapters; no comments. Instagram and age-restricted videos usually need cookies (YTDLP_COOKIES_FROM_BROWSER=chrome or YTDLP_COOKIES=<file>).
 - Direct video URLs (.mp4, .webm, .mov) — frame extraction, duration probing. When TWELVELABS_API_KEY is set, TwelveLabs Pegasus also provides an AI-generated, timestamped transcript (best-effort, not deterministic ASR) + AI summary for these (which direct URLs otherwise lack); prefer get_transcript for a text-only, no-frames answer.
 - Local video files — pass an absolute path (e.g., "/Users/you/clip.mp4") or a file:// URI; frame extraction + Whisper transcription work the same way
+
+A silent-but-present audio track (common in muted Reels/Stories) is detected before transcription: the transcript comes back empty with a warning saying so — that is content, not an error.
 
 Tools (choose the most efficient one for the task):
 - analyze_video: Full analysis. Use by default when a video URL appears. Returns transcript + frames + metadata + OCR + timeline.
@@ -64,6 +68,7 @@ Decision flow:
   // it declines and DirectAdapter handles them as before.
   registerAdapter(new LoomAdapter());
   registerAdapter(new LocalFileAdapter());
+  registerAdapter(new YtDlpAdapter());
   registerAdapter(new TwelveLabsAdapter());
   registerAdapter(new DirectAdapter());
 

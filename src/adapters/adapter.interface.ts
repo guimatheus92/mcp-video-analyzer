@@ -34,7 +34,7 @@ export function getAdapter(url: string): IVideoAdapter {
     }
   }
   throw new UserError(
-    `Unsupported video source: "${url}". Supported: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and absolute local paths or file:// URIs to video files.`,
+    `Unsupported video source: "${url}". Supported: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook video pages (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and absolute local paths or file:// URIs to video files.`,
   );
 }
 
