@@ -2,7 +2,7 @@
 
 ## Project
 
-MCP server for video analysis — extracts transcripts, key frames, metadata, OCR text, and annotated timelines from video URLs (Loom, direct links) and local video files.
+MCP server for video analysis — extracts transcripts, key frames, metadata, OCR text, and annotated timelines from video URLs (Loom, YouTube and other yt-dlp platforms, direct links) and local video files.
 
 ## Commands
 
@@ -19,7 +19,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 
 ## Architecture
 
-- **Adapters** (`src/adapters/`) — platform-specific logic (Loom GraphQL, direct URL download, TwelveLabs, local files). Each implements `IVideoAdapter`.
+- **Adapters** (`src/adapters/`) — platform-specific logic (Loom GraphQL, yt-dlp platforms [YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook], direct URL download, TwelveLabs, local files). Each implements `IVideoAdapter`. Registered most-specific-first in `server.ts`: Loom → LocalFile → YtDlp → TwelveLabs → Direct.
 - **Processors** (`src/processors/`) — shared processing: frame extraction (ffmpeg + browser fallback), image optimization + OCR preprocessing (sharp), frame dedup (dHash, visual + OCR-text-aware), OCR (tesseract.js), audio transcription (whisper), annotated timeline.
 - **Tools** (`src/tools/`) — MCP tool definitions registered on the FastMCP server. `analyze-core.ts` holds the shared cache + pipeline (`getAnalysis`) + content builder reused by both `analyze_video` and the batch `analyze_videos`.
 - **Utils** (`src/utils/`) — URL detection, VTT parsing, temp files, in-memory + on-disk cache (`cache.ts`, `analysis-sidecar.ts`), bounded concurrency (`concurrency.ts`), env-flag parsing (`env.ts`).
@@ -34,6 +34,9 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - Use `vitest` with `pool: 'forks'` (required on Windows).
 - Graceful degradation: never throw when partial results are available. Use `warnings[]` array.
 - Three-strategy video download: yt-dlp (primary) → direct HTTP via Loom CDN API (fallback) → headless Chrome screenshots (last resort).
+- yt-dlp platform URLs (single-video pages only; playlists/channels rejected) route through `YtDlpAdapter`. `findYtDlp()` (positive probe cached per process) + `runYtDlp()` + `ytdlpCookieArgs()` are shared via `src/utils/ytdlp.ts` — always spawn through `runYtDlp` so the bin/prefix pairing can't be forgotten. Missing yt-dlp surfaces as install-hint warnings: adapter `getTranscript`/`getMetadata` throw `YTDLP_MISSING` and every tool handler catches adapter rejections into `warnings[]`; `downloadVideo` must return `null`, never reject (the pipeline calls it without catch) and reports its failure reason via the optional `onWarning` sink. Native captions preferred (uploaded > auto-generated with rolling-window collapse); `[]` from `getTranscript` strictly means "no captions exist" (fetch failures throw) → Whisper fallback.
+- Standard-detail `maxFrames` default is duration-adaptive via `resolveMaxFrames()` in `detail-levels.ts` (~12 for ≤30s up to 60 for >10min). An explicit `maxFrames` always wins and keys the cache separately (`undefined` drops out of the cache key). `get_frames` keeps its fixed default of 20.
+- Silent-audio gate: `transcribeAudio()` probes the track with ffmpeg `volumedetect` (first 2 min) before any Whisper strategy; mean volume ≤ −55dB skips transcription with a warning — an empty transcript on a mute track is content, not a bug.
 - Frame extraction uses bundled `ffmpeg-static` — no system ffmpeg needed.
 - Black frame detection filters out DRM-protected/blank frames automatically.
 - Scene detection threshold default: 0.1 (optimized for screencasts/demos). Use `extractKeyFrames()` (not raw `extractSceneFrames`) so static clips with no scene cuts fall back to uniform temporal sampling — critical for talking-head Reels/Stories.
@@ -46,6 +49,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 
 - **Transcription:** `WHISPER_MODEL`, `WHISPER_LANGUAGE`, `WHISPER_PROMPT` (glossary → `--initial_prompt`), `WHISPER_BIN`, `WHISPER_DEVICE`/`WHISPER_COMPUTE`/`WHISPER_BEAM_SIZE`/`WHISPER_WORD_TIMESTAMPS` (env-gated — only passed to the CLI when set, so `openai-whisper` isn't broken by `whisper-ctranslate2`-only flags), `WHISPER_HF_MODEL` (opt-in), `OPENAI_API_KEY`.
 - **OCR:** `MCP_OCR_PREPROCESS` (default on; `0` to disable preprocessing).
+- **yt-dlp cookies:** `YTDLP_COOKIES` (Netscape cookie file, wins when both set) / `YTDLP_COOKIES_FROM_BROWSER` (e.g. `chrome`, `edge`) — needed for Instagram and age-restricted videos. Browser extraction requires the browser to be closed on Windows.
 - **Sidecars:** `MCP_WRITE_SIDECARS` (default off; `1` to persist resumable sidecars next to local videos).
 - **TwelveLabs:** `TWELVELABS_API_KEY` (opt-in Pegasus transcript/summary for direct URLs).
 

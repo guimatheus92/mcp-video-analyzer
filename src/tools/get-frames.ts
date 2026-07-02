@@ -19,10 +19,10 @@ const GetFramesSchema = z.object({
     .string()
     .refine(isVideoSource, {
       message:
-        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
     })
     .describe(
-      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+      'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
   options: z
     .object({
@@ -60,7 +60,7 @@ Two extraction modes:
 
 Returns optimized, deduplicated JPEG frames.
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).`,
+Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).`,
     parameters: GetFramesSchema,
     annotations: {
       title: 'Get Frames',
@@ -102,7 +102,7 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
 
       // Strategy 1: Download + ffmpeg
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir);
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
         if (videoPath) {
           await progress(40, 'Video downloaded, extracting frames...');
 

@@ -12,10 +12,10 @@ const GetTranscriptSchema = z.object({
     .string()
     .refine(isVideoSource, {
       message:
-        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
     })
     .describe(
-      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+      'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
   options: z
     .object({
@@ -51,7 +51,7 @@ Faster than analyze_video when you only need the transcript.
 If the platform has no native transcript, attempts Whisper fallback transcription
 (requires @huggingface/transformers, whisper CLI, or OPENAI_API_KEY).
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI). For local files a sidecar .vtt/.srt next to the file is used first, then an embedded subtitle track, and only then the Whisper fallback if neither exists.`,
+Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook (requires yt-dlp; native captions preferred), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI). For local files a sidecar .vtt/.srt next to the file is used first, then an embedded subtitle track, and only then the Whisper fallback if neither exists.`,
     parameters: GetTranscriptSchema,
     annotations: {
       title: 'Get Transcript',
@@ -109,7 +109,7 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
           try {
             await progress(45, 'No native transcript, downloading video for Whisper...');
             tempDir = await createTempDir();
-            const videoPath = await adapter.downloadVideo(url, tempDir);
+            const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
             if (videoPath) {
               await progress(65, 'Transcribing audio with Whisper...');
               const audioPath = await extractAudioTrack(videoPath, tempDir);

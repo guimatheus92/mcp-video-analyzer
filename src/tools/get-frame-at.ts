@@ -14,10 +14,10 @@ const GetFrameAtSchema = z.object({
     .string()
     .refine(isVideoSource, {
       message:
-        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
     })
     .describe(
-      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+      'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
   timestamp: z
     .string()
@@ -37,7 +37,7 @@ export function registerGetFrameAt(server: FastMCP): void {
 Useful for inspecting what's on screen at a particular moment. The AI reads the transcript,
 identifies a critical moment, and requests the exact frame at that timestamp.
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
+Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
 
 Args:
   - url: Video source (URL or local path)
@@ -61,10 +61,13 @@ Returns: A single image of the video frame at the specified timestamp.`,
       await progress(0, 'Starting frame extraction...');
 
       const tempDir = await createTempDir();
+      const downloadWarnings: string[] = [];
 
       // Strategy 1: Download video + ffmpeg extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir);
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
+          downloadWarnings.push(w),
+        );
 
         if (videoPath) {
           await progress(50, `Extracting frame at ${timestamp}...`);
@@ -112,7 +115,10 @@ Returns: A single image of the video frame at the specified timestamp.`,
       }
 
       throw new UserError(
-        'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
+        [
+          'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
+          ...downloadWarnings,
+        ].join(' '),
       );
     },
   });

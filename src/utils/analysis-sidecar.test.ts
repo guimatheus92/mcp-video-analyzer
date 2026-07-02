@@ -167,6 +167,45 @@ describe('sidecar write/read', () => {
     }
   });
 
+  it('round-trips adaptive-default params (maxFrames absent vs present-undefined)', async () => {
+    // The invariant: JSON.stringify drops undefined-valued keys symmetrically on
+    // the write path and the compare path. A refactor of sameParams to key-set
+    // comparison would break every adaptive-default sidecar — this pins it.
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+
+      const adaptiveParams = { detail: 'standard', maxFrames: undefined, threshold: 0.1 };
+      await writeAnalysisSidecars(clip, fakeResult(frame), adaptiveParams, {
+        transcriptFromWhisper: true,
+      });
+
+      const read = await readAnalysisSidecar(clip, { detail: 'standard', threshold: 0.1 });
+      expect(read).not.toBeNull();
+      expect(read?.transcript).toHaveLength(1);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('invalidates an old fixed-budget sidecar (maxFrames: 20) for adaptive-default params', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+      // Simulates a sidecar written by v0.5 (fixed maxFrames persisted).
+      await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, { transcriptFromWhisper: true });
+
+      const read = await readAnalysisSidecar(clip, { detail: 'standard', threshold: 0.1 });
+      expect(read).toBeNull(); // effective budget now differs per duration → recompute
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
   it('invalidates when the source video changes (stamp mismatch)', async () => {
     const tempDir = await createTempDir();
     try {

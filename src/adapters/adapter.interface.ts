@@ -18,7 +18,16 @@ export interface IVideoAdapter {
   getComments(url: string): Promise<IVideoComment[]>;
   getChapters(url: string): Promise<IChapter[]>;
   getAiSummary(url: string): Promise<string | null>;
-  downloadVideo(url: string, destDir: string): Promise<string | null>;
+  /**
+   * `onWarning` lets an adapter surface WHY a download degraded to null
+   * (e.g. yt-dlp's ERROR line, "live stream skipped") — without it the caller
+   * can only report a generic "no frames" message.
+   */
+  downloadVideo(
+    url: string,
+    destDir: string,
+    onWarning?: (message: string) => void,
+  ): Promise<string | null>;
 }
 
 const adapters: IVideoAdapter[] = [];
@@ -34,7 +43,7 @@ export function getAdapter(url: string): IVideoAdapter {
     }
   }
   throw new UserError(
-    `Unsupported video source: "${url}". Supported: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and absolute local paths or file:// URIs to video files.`,
+    `Unsupported video source: "${url}". Supported: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook video pages (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and absolute local paths or file:// URIs to video files.`,
   );
 }
 

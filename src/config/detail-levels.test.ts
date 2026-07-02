@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { DETAIL_CONFIGS, getDetailConfig } from './detail-levels.js';
+import { DETAIL_CONFIGS, getDetailConfig, resolveMaxFrames } from './detail-levels.js';
 import type { DetailLevel } from './detail-levels.js';
 
 describe('detail-levels', () => {
@@ -54,5 +54,34 @@ describe('detail-levels', () => {
         expect(config).toHaveProperty(key);
       }
     }
+  });
+});
+
+describe('resolveMaxFrames', () => {
+  it('explicit value always wins, at every level', () => {
+    expect(resolveMaxFrames(5, 'standard', 9999)).toBe(5);
+    expect(resolveMaxFrames(5, 'brief', 10)).toBe(5);
+    expect(resolveMaxFrames(5, 'detailed', 10)).toBe(5);
+  });
+
+  it('non-standard levels keep their fixed config', () => {
+    expect(resolveMaxFrames(undefined, 'brief', 45)).toBe(0);
+    expect(resolveMaxFrames(undefined, 'detailed', 45)).toBe(60);
+  });
+
+  it('unknown duration falls back to the fixed standard default', () => {
+    expect(resolveMaxFrames(undefined, 'standard', 0)).toBe(20);
+    expect(resolveMaxFrames(undefined, 'standard', -1)).toBe(20);
+  });
+
+  it('standard scales with duration at tier boundaries', () => {
+    expect(resolveMaxFrames(undefined, 'standard', 30)).toBe(12);
+    expect(resolveMaxFrames(undefined, 'standard', 31)).toBe(20);
+    expect(resolveMaxFrames(undefined, 'standard', 60)).toBe(20);
+    expect(resolveMaxFrames(undefined, 'standard', 61)).toBe(30);
+    expect(resolveMaxFrames(undefined, 'standard', 180)).toBe(30);
+    expect(resolveMaxFrames(undefined, 'standard', 181)).toBe(45);
+    expect(resolveMaxFrames(undefined, 'standard', 600)).toBe(45);
+    expect(resolveMaxFrames(undefined, 'standard', 601)).toBe(60);
   });
 });

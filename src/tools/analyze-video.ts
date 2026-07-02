@@ -15,10 +15,10 @@ const AnalyzeVideoSchema = z.object({
     .string()
     .refine(isVideoSource, {
       message:
-        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
     })
     .describe(
-      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+      'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
   options: AnalyzeOptionsSchema.describe('Analysis options'),
 });
@@ -36,7 +36,7 @@ Returns structured data about the video content:
 - Metadata (title, duration, platform)
 - Comments from viewers (if available)
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
+Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
 
 Detail levels:
 - "brief": metadata + truncated transcript only (fast, no video download)

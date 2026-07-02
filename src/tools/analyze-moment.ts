@@ -16,10 +16,10 @@ const AnalyzeMomentSchema = z.object({
     .string()
     .refine(isVideoSource, {
       message:
-        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
     })
     .describe(
-      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+      'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
   from: z.string().describe('Start timestamp (e.g., "1:30")'),
   to: z.string().describe('End timestamp (e.g., "2:00")'),
@@ -53,7 +53,7 @@ Use this when you need to understand exactly what happens between two timestamps
 
 Example: analyze_moment(url, "1:30", "2:00", 10) → 10 frames + transcript + OCR for that 30s window
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).`,
+Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).`,
     parameters: AnalyzeMomentSchema,
     annotations: {
       title: 'Analyze Moment',
@@ -111,9 +111,12 @@ Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and 
         );
       }
 
-      const videoPath = await adapter.downloadVideo(url, tempDir);
+      const downloadWarnings: string[] = [];
+      const videoPath = await adapter.downloadVideo(url, tempDir, (w) => downloadWarnings.push(w));
       if (!videoPath) {
-        throw new UserError('Failed to download video for moment analysis.');
+        throw new UserError(
+          ['Failed to download video for moment analysis.', ...downloadWarnings].join(' '),
+        );
       }
 
       await progress(35, 'Video downloaded, extracting burst frames...');

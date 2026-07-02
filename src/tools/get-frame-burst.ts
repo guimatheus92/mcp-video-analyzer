@@ -14,10 +14,10 @@ const GetFrameBurstSchema = z.object({
     .string()
     .refine(isVideoSource, {
       message:
-        'Must be a Loom share URL, a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
     })
     .describe(
-      'Video source: Loom share link, direct .mp4/.webm/.mov URL, or absolute path to a local video file',
+      'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',
     ),
   from: z.string().describe('Start timestamp (e.g., "0:15")'),
   to: z.string().describe('End timestamp (e.g., "0:17")'),
@@ -47,7 +47,7 @@ Example: get_frame_burst(url, "0:15", "0:17", 10) → 10 frames in 2 seconds
 - AI sees the object in different positions across frames → understands the vibration
 - Works for: shaking, flickering, animations, fast scrolling, loading spinners
 
-Supports: Loom (loom.com/share/...), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
+Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook (requires yt-dlp), direct video URLs (.mp4, .webm, .mov), and local video files (absolute path or file:// URI).
 
 Args:
   - url: Video source (URL or local path)
@@ -74,10 +74,13 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       await progress(0, `Starting burst extraction (${from} → ${to})...`);
 
       const tempDir = await createTempDir();
+      const downloadWarnings: string[] = [];
 
       // Strategy 1: Download video + ffmpeg burst extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir);
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
+          downloadWarnings.push(w),
+        );
 
         if (videoPath) {
           await progress(40, 'Video downloaded, extracting burst frames...');
@@ -150,7 +153,10 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       }
 
       throw new UserError(
-        'Failed to extract frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
+        [
+          'Failed to extract frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
+          ...downloadWarnings,
+        ].join(' '),
       );
     },
   });

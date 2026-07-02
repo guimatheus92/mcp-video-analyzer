@@ -1,5 +1,5 @@
 /** Video sources the server can detect and route to a dedicated adapter. */
-export type Platform = 'loom' | 'direct' | 'local' | 'twelvelabs';
+export type Platform = 'loom' | 'direct' | 'local' | 'twelvelabs' | 'ytdlp';
 
 /** Platform as reported in metadata; `'unknown'` is a fallback sentinel. */
 type MetadataPlatform = Platform | 'unknown';
@@ -29,6 +29,9 @@ export interface IVideoMetadata {
   hasAudio?: boolean;
   creationTime?: string;
   fileSizeBytes?: number;
+  // Populated by platform adapters (yt-dlp) that expose channel/view info.
+  uploader?: string;
+  viewCount?: number;
 }
 
 export interface IVideoComment {

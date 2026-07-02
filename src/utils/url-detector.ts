@@ -4,6 +4,22 @@ import type { Platform } from '../types.js';
 
 const LOOM_PATTERN = /^https?:\/\/(?:www\.)?loom\.com\/(?:share|embed)\/([a-f0-9-]+)/i;
 
+// Platform pages the yt-dlp adapter handles. Single-video pages only —
+// playlists, channels, and profiles stay rejected.
+const YTDLP_PATTERNS: RegExp[] = [
+  /^https?:\/\/(?:www\.|m\.)?youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|live\/)[\w-]+/i,
+  /^https?:\/\/youtu\.be\/[\w-]+/i,
+  /^https?:\/\/(?:www\.)?vimeo\.com\/\d+/i,
+  /^https?:\/\/(?:www\.)?tiktok\.com\/@[^/]+\/video\/\d+/i,
+  /^https?:\/\/(?:www\.)?instagram\.com\/(?:reel|reels|p|tv)\/[\w-]+/i,
+  /^https?:\/\/(?:www\.|mobile\.)?(?:twitter|x)\.com\/[^/]+\/status\/\d+/i,
+  /^https?:\/\/(?:www\.|m\.)?twitch\.tv\/(?:videos\/\d+|[^/]+\/clip\/)/i,
+  /^https?:\/\/clips\.twitch\.tv\/[\w-]+/i,
+  /^https?:\/\/(?:www\.)?dailymotion\.com\/video\/\w+/i,
+  /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=\d+|[^/]+\/videos\/\d+|reel\/\d+)/i,
+  /^https?:\/\/fb\.watch\/[\w-]+/i,
+];
+
 // Single source of truth for which extensions route to a video source (used by
 // both local files and direct URLs). The extension only gates detection —
 // ffmpeg does the actual demuxing, so most common containers work. `.ts` is
@@ -39,6 +55,11 @@ export function detectPlatform(url: string): Platform | null {
 
     if (LOOM_PATTERN.test(url)) {
       return 'loom';
+    }
+
+    // Before the extension check so platform pages win over path extensions.
+    if (YTDLP_PATTERNS.some((p) => p.test(url))) {
+      return 'ytdlp';
     }
 
     const ext = getExtension(parsed.pathname);
