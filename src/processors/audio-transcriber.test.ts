@@ -66,6 +66,27 @@ describe('transcribeAudio', () => {
     expect(result).toEqual([]);
   });
 
+  it('warns how to enable transcription when no backend is available', async () => {
+    const tempDir = await createTempDir();
+    try {
+      // Audible tone so the silence gate does not short-circuit first.
+      const toneWav = join(tempDir, 'tone.wav');
+      await execFile(
+        ffmpegPath,
+        ['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=16000', '-t', '1', toneWav, '-y'],
+        { timeout: 30000 },
+      );
+
+      const warnings: string[] = [];
+      const result = await transcribeAudio(toneWav, {}, (w) => warnings.push(w));
+
+      expect(result).toEqual([]);
+      expect(warnings.some((w) => w.includes('No speech-to-text backend available'))).toBe(true);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
   it('skips every strategy for a silent track, with a warning', async () => {
     const tempDir = await createTempDir();
     try {

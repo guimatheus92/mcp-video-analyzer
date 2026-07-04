@@ -302,6 +302,28 @@ describe('YtDlpAdapter', () => {
         );
         expect(path).toBeNull();
         expect(warnings.join(' ')).toContain('ERROR: Requested format is not available');
+        // A plain format error is not auth-related — no cookie hint appended.
+        expect(warnings.join(' ')).not.toContain('YTDLP_COOKIES');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('appends a cookie hint when the download fails with a login-gated error', async () => {
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          throw Object.assign(new Error('Command failed'), {
+            stderr: 'ERROR: [Instagram] abc: Instagram sent an empty media response.\n',
+          });
+        };
+        const warnings: string[] = [];
+        await adapter.downloadVideo('https://www.instagram.com/reel/abc/', tempDir, (w) =>
+          warnings.push(w),
+        );
+        expect(warnings.join(' ')).toContain('empty media response');
+        expect(warnings.join(' ')).toContain('YTDLP_COOKIES');
       } finally {
         await cleanupTempDir(tempDir);
       }

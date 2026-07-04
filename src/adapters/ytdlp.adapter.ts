@@ -43,17 +43,29 @@ function commonArgs(): string[] {
   return ['--no-warnings', '--no-playlist', ...ytdlpCookieArgs()];
 }
 
+/** Login-gated failures are fixable with cookies — matched to append the hint. */
+const AUTH_ERROR =
+  /log[\s-]?in|cookies?|sign in|empty media response|private|age.?restrict|rate.?limit/i;
+
 /**
  * Pull the first `ERROR: ...` line out of yt-dlp's stderr so private /
- * age-restricted / unavailable videos surface as readable warnings.
+ * age-restricted / unavailable videos surface as readable warnings. When the
+ * failure looks auth-related (common for Instagram/private posts), append a
+ * hint pointing at the env vars THIS server reads — yt-dlp's own message only
+ * mentions raw `--cookies` CLI flags the MCP user never invokes.
  */
 function extractYtDlpError(err: unknown): string {
   const stderr = (err as { stderr?: string })?.stderr;
+  let msg = err instanceof Error ? err.message : String(err);
   if (typeof stderr === 'string') {
     const line = stderr.split(/\r?\n/).find((l) => l.startsWith('ERROR:'));
-    if (line) return line;
+    if (line) msg = line;
   }
-  return err instanceof Error ? err.message : String(err);
+  if (AUTH_ERROR.test(msg)) {
+    msg +=
+      ' — this content likely requires authentication: set YTDLP_COOKIES=<Netscape cookie file> or YTDLP_COOKIES_FROM_BROWSER=chrome (on Windows the browser must be closed).';
+  }
+  return msg;
 }
 
 /**
