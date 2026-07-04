@@ -126,14 +126,25 @@ export async function transcribeAudio(
   if (hfResult) return hfResult;
 
   // Strategy 2: whisper CLI
-  const cliResult = await transcribeWithWhisperCli(audioPath, opts, onWarning);
-  if (cliResult) return cliResult;
+  const cli = await transcribeWithWhisperCli(audioPath, opts, onWarning);
+  if (cli.status === 'ok') return cli.entries;
 
   // Strategy 3: OpenAI Whisper API
   const apiResult = await transcribeWithOpenAiApi(audioPath, opts, onWarning);
   if (apiResult) return apiResult;
 
-  // No transcription strategy available
+  // Nothing produced a transcript. When no backend is even configured (the
+  // common cause of a mysteriously empty transcript), say how to enable one
+  // instead of returning a bare [] the caller reports as "no transcript".
+  if (
+    !process.env.WHISPER_HF_MODEL &&
+    cli.status === 'not-installed' &&
+    !process.env.OPENAI_API_KEY
+  ) {
+    onWarning?.(
+      'No speech-to-text backend available. Install the Whisper CLI (pip install -U openai-whisper), set OPENAI_API_KEY, or set WHISPER_HF_MODEL to transcribe audio.',
+    );
+  }
   return [];
 }
 
@@ -271,13 +282,30 @@ export function parseWhisperJson(raw: string): ITranscriptEntry[] | null {
     }));
 }
 
+/**
+ * Outcome of the whisper CLI strategy. `not-installed` (no binary on any
+ * candidate) is distinct from `failed` (found but crashed/produced no usable
+ * output) so the caller can emit an install hint only when nothing is present.
+ */
+type WhisperCliOutcome =
+  | { status: 'ok'; entries: ITranscriptEntry[] }
+  | { status: 'not-installed' }
+  | { status: 'failed' };
+
 async function transcribeWithWhisperCli(
   audioPath: string,
   opts: TranscribeOptions,
   onWarning?: (message: string) => void,
-): Promise<ITranscriptEntry[] | null> {
-  const whisperCmd = await findWhisperCommand();
-  if (!whisperCmd) return null; // not installed — silent; the next strategy handles it.
+): Promise<WhisperCliOutcome> {
+  // WHISPER_BIN can point at an explicit path (on Windows the Python Scripts
+  // dir is often off the PATH that GUI-launched MCP clients inherit); otherwise
+  // fall back to `whisper` on PATH. We run the real command and read ENOENT to
+  // tell "not installed" from "installed but broken" — no separate `--help`
+  // probe (it double-imports torch, ~15s, and crashes on Windows when the help
+  // text contains non-ASCII under the cp1252 stdout codec).
+  const candidates = [process.env.WHISPER_BIN, 'whisper'].filter(
+    (c): c is string => typeof c === 'string' && c.length > 0,
+  );
 
   // Write output into the audio's own dir (a per-video temp dir) rather than a
   // shared tmpdir(), so concurrent transcriptions don't collide on the same
@@ -285,31 +313,47 @@ async function transcribeWithWhisperCli(
   const outputDir = dirname(audioPath);
   const jsonPath = join(outputDir, `${basename(audioPath, extname(audioPath))}.json`);
 
-  try {
+  const env = {
+    ...process.env,
     // whisper (Python) shells out to `ffmpeg` to decode audio. Put the bundled
     // ffmpeg-static binary on PATH so no system ffmpeg install is required.
-    const env = {
-      ...process.env,
-      PATH: `${dirname(ffmpegPath)}${delimiter}${process.env.PATH ?? ''}`,
-    };
+    PATH: `${dirname(ffmpegPath)}${delimiter}${process.env.PATH ?? ''}`,
+    // Python's stdout defaults to the locale codec (cp1252 on Windows), which
+    // throws UnicodeEncodeError when Whisper prints non-ASCII text (CJK,
+    // accented Portuguese, …). Force UTF-8 both ways so multilingual audio
+    // doesn't crash the CLI mid-transcription.
+    PYTHONUTF8: '1',
+    PYTHONIOENCODING: 'utf-8',
+  };
+
+  for (const cmd of candidates) {
     try {
-      await execFile(whisperCmd, buildWhisperCliArgs(audioPath, outputDir, opts), {
+      await execFile(cmd, buildWhisperCliArgs(audioPath, outputDir, opts), {
         timeout: 300000,
         env,
       });
     } catch (e: unknown) {
-      // The binary was found but crashed/timed out — surface it (it's fixable,
-      // unlike "not installed") instead of collapsing into a silent "no transcript".
+      // Command not found (or WHISPER_BIN path wrong) → try the next candidate;
+      // if none resolve, the caller reports "no backend installed".
+      if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
+      // Found but crashed/timed out — surface it (fixable, unlike not-installed).
       onWarning?.(`Whisper CLI failed: ${e instanceof Error ? e.message : String(e)}`);
-      return null;
+      await rm(jsonPath, { force: true }).catch(() => undefined);
+      return { status: 'failed' };
     }
-    return parseWhisperJson(await readFile(jsonPath, 'utf-8'));
-  } catch {
-    return null;
-  } finally {
-    // Best-effort cleanup of the temp transcript file.
-    await rm(jsonPath, { force: true }).catch(() => undefined);
+
+    try {
+      const entries = parseWhisperJson(await readFile(jsonPath, 'utf-8'));
+      // null = no `segments` key (unexpected output) → let OpenAI try next.
+      return entries === null ? { status: 'failed' } : { status: 'ok', entries };
+    } catch {
+      return { status: 'failed' };
+    } finally {
+      await rm(jsonPath, { force: true }).catch(() => undefined);
+    }
   }
+
+  return { status: 'not-installed' };
 }
 
 async function transcribeWithOpenAiApi(
@@ -374,28 +418,6 @@ async function transcribeWithOpenAiApi(
     onWarning?.(`OpenAI transcription failed: ${e instanceof Error ? e.message : String(e)}`);
     return null;
   }
-}
-
-/**
- * Locate a usable `whisper` executable. WHISPER_BIN can point at an explicit
- * path (useful on Windows, where the Python Scripts dir is often not on the
- * PATH that GUI-launched processes inherit). Otherwise falls back to `whisper`
- * on PATH.
- */
-async function findWhisperCommand(): Promise<string | null> {
-  const candidates = [process.env.WHISPER_BIN, 'whisper'].filter(
-    (c): c is string => typeof c === 'string' && c.length > 0,
-  );
-
-  for (const cmd of candidates) {
-    try {
-      await execFile(cmd, ['--help'], { timeout: 5000 });
-      return cmd;
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

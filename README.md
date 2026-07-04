@@ -10,6 +10,8 @@ MCP server for video analysis — extracts transcripts, key frames, and metadata
 
 No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does.
 
+> **Want a full pipeline, not just a tool?** [social-knowledge-base](https://github.com/guimatheus92/social-knowledge-base) is built on top of this server — it downloads whole Instagram creator accounts (reels, stories, highlights), transcribes them, and turns the result into a searchable, RAG-queryable knowledge base with AI-generated notes. Use this MCP when you want per-video analysis inside an agent; use social-knowledge-base when you want to archive and query an entire account.
+
 ## Installation
 
 ### Prerequisites
@@ -243,6 +245,8 @@ When a source has no native transcript (no sidecar `.vtt`/`.srt`, no embedded su
 1. **@huggingface/transformers** (JS-native, zero external deps) — **opt-in only**: this strategy runs *first*, but **only when `WHISPER_HF_MODEL` is explicitly set**. When it's unset (the default) the strategy is skipped entirely, so the CLI below wins and its `WHISPER_MODEL`/`WHISPER_LANGUAGE` settings are never silently overridden.
 2. **`whisper` CLI** — used when a `whisper` executable is found (`pip install -U openai-whisper`). Point `WHISPER_BIN` at the executable if it isn't on `PATH`. Model via `WHISPER_MODEL`, language via `WHISPER_LANGUAGE`. The bundled `ffmpeg-static` is put on the CLI's `PATH` automatically, so no system ffmpeg is required.
 3. **OpenAI Whisper API** — used when `OPENAI_API_KEY` is set.
+
+> **No backend configured?** If none of the three is available (no `whisper` on `PATH`/`WHISPER_BIN`, no `OPENAI_API_KEY`, no `WHISPER_HF_MODEL`), transcription tools return an empty transcript **with a warning telling you how to enable one** — rather than a silent "no transcript". Install `openai-whisper` or set one of the keys above. (The CLI is spawned with `PYTHONUTF8=1` so non-English/CJK transcripts don't crash the Python process on Windows.)
 
 | Env var | Applies to | Default | Example |
 |---------|-----------|---------|---------|
