@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/mcp-video-analyzer"><img src="https://img.shields.io/npm/v/mcp-video-analyzer?color=e8468f&labelColor=1e1e2e&logo=npm&logoColor=white" alt="npm" /></a>
   <a href="https://github.com/guimatheus92/mcp-video-analyzer/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/mcp-video-analyzer?color=8b5cf6&labelColor=1e1e2e" alt="license" /></a>
-  <a href="https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process"><img src="https://img.shields.io/badge/awesome--mcp--servers-listed-ff4d6d?labelColor=1e1e2e" alt="awesome-mcp-servers" /></a>
+  <a href="#installation"><img src="https://img.shields.io/node/v/mcp-video-analyzer?color=ff4d6d&labelColor=1e1e2e&logo=node.js&logoColor=white" alt="node" /></a>
 </p>
 
 <p align="center">
