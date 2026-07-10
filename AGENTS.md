@@ -16,7 +16,7 @@ Without the skill, the one-shot CLI works from any shell (Node 18+ only; ffmpeg 
 npx -y mcp-video-analyzer@latest analyze "<video-url-or-path>"
 ```
 
-stdout is a single JSON document (`metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frames[].filePath` → JPEG key frames on disk). Progress goes to stderr. Read the frame images for visual questions; answer with timestamps. `analyze --help` lists all flags.
+stdout is a single JSON document (`metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, and `frames` as `{ time, filePath, mimeType }` → JPEG key frames on disk). Progress goes to stderr. Read the frame images for visual questions; answer with timestamps. `analyze --help` lists all flags.
 
 ## MCP alternative
 

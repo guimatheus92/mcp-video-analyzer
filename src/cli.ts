@@ -1,14 +1,19 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, isAbsolute, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { ZodError } from 'zod';
-import { registerAllAdapters } from './server.js';
-import { AnalyzeOptionsSchema, getAnalysis, resolveAnalyzeParams } from './tools/analyze-core.js';
+import { registerAllAdapters } from './adapters/register.js';
+import {
+  AnalyzeOptionsSchema,
+  assembleResultDoc,
+  getAnalysis,
+  resolveAnalyzeParams,
+} from './tools/analyze-core.js';
 import type { AnalyzeOptions, ProgressReporter } from './tools/analyze-core.js';
 import type { IFrameResult } from './types.js';
-import { filterAnalysisResult } from './utils/field-filter.js';
+import { persistentCacheDir } from './utils/temp-files.js';
 import { isVideoSource } from './utils/url-detector.js';
 
 const CLI_USAGE = `Usage: mcp-video-analyzer analyze <url-or-path> [options]
@@ -21,8 +26,10 @@ absolute path in the JSON. Partial failures degrade into the "warnings" array
 Options:
   --detail <level>        brief | standard | detailed (default: standard)
   --max-frames <n>        Max key frames to extract (1-60; default adapts to duration)
-  --fields <list>         Comma-separated subset of: metadata,transcript,frames,
-                          comments,chapters,ocrResults,timeline,aiSummary
+  --fields <list>         Output filter — comma-separated subset of: metadata,
+                          transcript,frames,comments,chapters,ocrResults,
+                          timeline,aiSummary. Filters the emitted JSON only;
+                          use --detail brief to actually skip frame extraction.
   --force-refresh         Bypass cache and re-analyze
   --ocr-language <codes>  Tesseract OCR languages (default: eng+por)
   --model <name>          Whisper model override (e.g. small, medium)
@@ -33,7 +40,7 @@ Options:
 
 Sources: Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch,
 Dailymotion, Facebook (yt-dlp required), direct .mp4/.webm/.mov URLs, and
-absolute local paths / file:// URIs.
+local paths / file:// URIs.
 `;
 
 export interface CliInvocation {
@@ -89,32 +96,43 @@ export function parseCliArgs(argv: string[]): CliInvocation {
 /** Stable per-source frames dir so repeat runs reuse the same folder. */
 export function defaultOutDir(url: string): string {
   const hash = createHash('sha256').update(url).digest('hex').slice(0, 12);
-  return join(tmpdir(), 'mcp-video-analyzer', hash);
+  return persistentCacheDir(hash);
 }
 
 /**
  * Copy frame images out of the per-call temp dir (about to be cleaned up) into
  * `outDir`, rewriting each `filePath`. Keeps the temp basenames — never derive
- * names from `time` values, which contain `:` (illegal on Windows). A frame
- * whose source file is already gone is dropped and counted in `missing`.
+ * names from `time` values, which contain `:` (illegal on Windows).
+ *
+ * ENOENT on the source (frame already cleaned up after a cache hit) is the
+ * benign case, counted in `missing`. Any other failure (EACCES/ENOSPC/EROFS on
+ * the destination) is a real write problem — reported per-frame in `errors`
+ * with the actual errno message, never disguised as a cache race.
  */
 export async function copyFrames(
   frames: IFrameResult[],
   outDir: string,
-): Promise<{ frames: IFrameResult[]; missing: number }> {
+): Promise<{ frames: IFrameResult[]; missing: number; errors: string[] }> {
   await mkdir(outDir, { recursive: true });
   const copied: IFrameResult[] = [];
   let missing = 0;
+  const errors: string[] = [];
   for (const frame of frames) {
     const dest = join(outDir, basename(frame.filePath));
     try {
       await copyFile(frame.filePath, dest);
       copied.push({ ...frame, filePath: dest });
-    } catch {
-      missing++;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        missing++;
+      } else {
+        errors.push(
+          `Frame copy to ${dest} failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
   }
-  return { frames: copied, missing };
+  return { frames: copied, missing, errors };
 }
 
 function formatError(err: unknown): string {
@@ -144,10 +162,15 @@ export async function runCli(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const { url } = invocation;
+  // A CLI runs from a known shell cwd, so resolve relative local paths before
+  // the gate (the MCP server rejects them — its cwd is unpredictable).
+  let url = invocation.url;
+  if (url && !isAbsolute(url) && !url.includes('://') && existsSync(url)) {
+    url = resolve(url);
+  }
   if (!url || !isVideoSource(url)) {
     process.stderr.write(
-      'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file\n',
+      'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or a path / file:// URI to a local video file\n',
     );
     return 1;
   }
@@ -172,28 +195,31 @@ export async function runCli(argv: string[]): Promise<number> {
 
   let frames: IFrameResult[] = [];
   let missing = 0;
-  if (wantFrames && result.frames.length > 0) {
-    ({ frames, missing } = await copyFrames(
-      result.frames,
-      invocation.outDir ?? defaultOutDir(url),
-    ));
+  const copyWarnings: string[] = [];
+  try {
+    if (wantFrames && result.frames.length > 0) {
+      const copied = await copyFrames(result.frames, invocation.outDir ?? defaultOutDir(url));
+      frames = copied.frames;
+      missing = copied.missing;
+      copyWarnings.push(...copied.errors);
+    }
+  } catch (err) {
+    // A failed mkdir/copy (bad --out, permissions) must not discard an
+    // analysis that already succeeded — degrade into warnings[] and emit the
+    // document without frame files (graceful-degradation convention).
+    copyWarnings.push(
+      `Frame images could not be copied to the output dir: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    // Always reclaim the per-call temp dir, even when the copy failed.
+    await handle.cleanup();
   }
-  await handle.cleanup();
 
-  const filtered = filterAnalysisResult(result, fields);
-  const warnings =
-    missing > 0
-      ? [
-          ...filtered.warnings,
-          `${missing} of ${result.frames.length} frame image(s) were unavailable (likely cleaned up after caching) — re-run with --force-refresh to regenerate them.`,
-        ]
-      : filtered.warnings;
-
-  const doc: Record<string, unknown> = {
-    ...filtered,
-    warnings,
-    frameCount: result.frames.length,
-  };
+  const doc = assembleResultDoc(result, fields, {
+    missingFrames: missing,
+    refreshHint: '--force-refresh',
+    extraWarnings: copyWarnings,
+  });
   if (wantFrames) doc.frames = frames;
 
   process.stdout.write(`${JSON.stringify(doc, null, 2)}\n`);

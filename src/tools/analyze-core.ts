@@ -524,6 +524,28 @@ export async function getAnalysis(
 export type ToolContent = { type: 'text'; text: string } | Awaited<ReturnType<typeof imageContent>>;
 
 /**
+ * Assemble the field-filtered result document shared by the MCP content
+ * builder and the CLI (the "CLI JSON shape" contract in CLAUDE.md): filtered
+ * fields + warnings (missing-frames hint appended when some frame images were
+ * gone) + `frameCount`. Callers attach their own frame representation on top
+ * (inline images + `framesEmbedded`, or copied `frames[].filePath` entries).
+ */
+export function assembleResultDoc(
+  result: IAnalysisResult,
+  fields: AnalysisField[] | undefined,
+  opts: { missingFrames: number; refreshHint: string; extraWarnings?: string[] },
+): Record<string, unknown> {
+  const filtered = filterAnalysisResult(result, fields);
+  const warnings = [...filtered.warnings, ...(opts.extraWarnings ?? [])];
+  if (opts.missingFrames > 0) {
+    warnings.push(
+      `${opts.missingFrames} of ${result.frames.length} frame image(s) were unavailable (likely cleaned up after caching) — re-run with ${opts.refreshHint} to regenerate them.`,
+    );
+  }
+  return { ...filtered, warnings, frameCount: result.frames.length };
+}
+
+/**
  * Build the MCP tool response content for an analysis result: a JSON text block
  * (field-filtered) followed by the frame images (unless `frames` is filtered
  * out).
@@ -550,20 +572,9 @@ export async function buildAnalysisContent(
     }
   }
 
-  const filtered = filterAnalysisResult(result, fields);
   const missing = includeFrames ? result.frames.length - images.length : 0;
-  const warnings =
-    missing > 0
-      ? [
-          ...filtered.warnings,
-          `${missing} of ${result.frames.length} frame image(s) were unavailable (likely cleaned up after caching) — re-run with forceRefresh to regenerate them.`,
-        ]
-      : filtered.warnings;
-
   const textData = {
-    ...filtered,
-    warnings,
-    frameCount: result.frames.length,
+    ...assembleResultDoc(result, fields, { missingFrames: missing, refreshHint: 'forceRefresh' }),
     ...(includeFrames ? { framesEmbedded: images.length } : {}),
   };
 

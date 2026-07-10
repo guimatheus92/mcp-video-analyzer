@@ -1,10 +1,17 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createTestImage } from '../test/helpers/index.js';
-import { copyFrames, defaultOutDir, parseCliArgs } from './cli.js';
-import type { IFrameResult } from './types.js';
+import { copyFrames, defaultOutDir, parseCliArgs, runCli } from './cli.js';
+import { getAnalysis } from './tools/analyze-core.js';
+import type * as analyzeCore from './tools/analyze-core.js';
+import type { IAnalysisResult, IFrameResult } from './types.js';
+
+vi.mock('./tools/analyze-core.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof analyzeCore>();
+  return { ...actual, getAnalysis: vi.fn(actual.getAnalysis) };
+});
 
 describe('parseCliArgs', () => {
   it('maps flags to analyze options', () => {
@@ -82,20 +89,21 @@ describe('defaultOutDir', () => {
   });
 });
 
+const tempDirs: string[] = [];
+
+async function makeTempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'cli-test-'));
+  tempDirs.push(dir);
+  return dir;
+}
+
+afterEach(async () => {
+  await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
+  tempDirs.length = 0;
+  vi.restoreAllMocks();
+});
+
 describe('copyFrames', () => {
-  const tempDirs: string[] = [];
-
-  async function makeTempDir(): Promise<string> {
-    const dir = await mkdtemp(join(tmpdir(), 'cli-test-'));
-    tempDirs.push(dir);
-    return dir;
-  }
-
-  afterEach(async () => {
-    await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
-    tempDirs.length = 0;
-  });
-
   it('copies frames to the out dir, rewriting paths and counting missing sources', async () => {
     const srcDir = await makeTempDir();
     const outDir = join(await makeTempDir(), 'frames');
@@ -114,14 +122,134 @@ describe('copyFrames', () => {
       { time: '0:10', filePath: join(srcDir, 'frame_gone.jpg'), mimeType: 'image/jpeg' },
     ];
 
-    const { frames: copied, missing } = await copyFrames(frames, outDir);
+    const { frames: copied, missing, errors } = await copyFrames(frames, outDir);
 
     expect(missing).toBe(1);
+    expect(errors).toEqual([]);
     expect(copied).toHaveLength(2);
     expect(copied.map((f) => f.time)).toEqual(['0:00', '0:05']);
     for (const frame of copied) {
       expect(frame.filePath.startsWith(outDir)).toBe(true);
       await expect(stat(frame.filePath)).resolves.toBeDefined();
     }
+  });
+
+  it('reports non-ENOENT copy failures as errors, not as missing frames', async () => {
+    const srcDir = await makeTempDir();
+    const outDir = await makeTempDir();
+
+    const framePath = await createTestImage(srcDir, 'frame_0001.jpg');
+    // A directory occupying the destination path forces a non-ENOENT failure
+    // (EPERM/EISDIR depending on platform).
+    await mkdir(join(outDir, 'frame_0001.jpg'));
+
+    const { frames, missing, errors } = await copyFrames(
+      [{ time: '0:00', filePath: framePath, mimeType: 'image/jpeg' }],
+      outDir,
+    );
+
+    expect(frames).toEqual([]);
+    expect(missing).toBe(0);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('Frame copy to');
+    expect(errors[0]).not.toContain('force-refresh');
+  });
+});
+
+describe('runCli', () => {
+  function captureStreams(): { stdout: () => string; stderr: () => string } {
+    let out = '';
+    let err = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation((chunk) => {
+      out += String(chunk);
+      return true;
+    });
+    vi.spyOn(process.stderr, 'write').mockImplementation((chunk) => {
+      err += String(chunk);
+      return true;
+    });
+    return { stdout: () => out, stderr: () => err };
+  }
+
+  function fakeResult(frames: IFrameResult[]): IAnalysisResult {
+    return {
+      metadata: {
+        platform: 'local',
+        title: 'fake',
+        duration: 1,
+        durationFormatted: '0:01',
+        url: 'C:/videos/fake.mp4',
+      },
+      transcript: [],
+      frames,
+      comments: [],
+      chapters: [],
+      ocrResults: [],
+      timeline: [],
+      warnings: ['base warning'],
+    };
+  }
+
+  it('exits 1 with stderr only when the analysis hard-fails', async () => {
+    const streams = captureStreams();
+    vi.mocked(getAnalysis).mockRejectedValueOnce(new Error('pipeline exploded'));
+
+    const code = await runCli([join(tmpdir(), 'whatever.mp4')]);
+
+    expect(code).toBe(1);
+    expect(streams.stdout()).toBe('');
+    expect(streams.stderr()).toContain('pipeline exploded');
+  });
+
+  it('degrades a failed frame copy into warnings, still runs cleanup and exits 0', async () => {
+    const streams = captureStreams();
+    const cleanup = vi.fn(async () => undefined);
+    const srcDir = await makeTempDir();
+    const framePath = await createTestImage(srcDir, 'frame_0001.jpg');
+    vi.mocked(getAnalysis).mockResolvedValueOnce({
+      result: fakeResult([{ time: '0:00', filePath: framePath, mimeType: 'image/jpeg' }]),
+      cleanup,
+    });
+    // An --out whose parent is a FILE makes copyFrames' mkdir reject.
+    const bogusOut = join(framePath, 'sub');
+
+    const code = await runCli([join(tmpdir(), 'whatever.mp4'), '--out', bogusOut]);
+
+    expect(code).toBe(0);
+    expect(cleanup).toHaveBeenCalled();
+    const doc = JSON.parse(streams.stdout());
+    expect(doc.frames).toEqual([]);
+    expect(doc.warnings).toContain('base warning');
+    expect(doc.warnings.some((w: string) => w.includes('Frame images could not be copied'))).toBe(
+      true,
+    );
+  });
+
+  it('appends the missing-frames warning when source frames are already gone', async () => {
+    const streams = captureStreams();
+    const cleanup = vi.fn(async () => undefined);
+    const srcDir = await makeTempDir();
+    vi.mocked(getAnalysis).mockResolvedValueOnce({
+      result: fakeResult([
+        { time: '0:00', filePath: join(srcDir, 'frame_gone.jpg'), mimeType: 'image/jpeg' },
+      ]),
+      cleanup,
+    });
+
+    const code = await runCli([
+      join(tmpdir(), 'whatever.mp4'),
+      '--out',
+      join(await makeTempDir(), 'frames'),
+    ]);
+
+    expect(code).toBe(0);
+    expect(cleanup).toHaveBeenCalled();
+    const doc = JSON.parse(streams.stdout());
+    expect(doc.frames).toEqual([]);
+    expect(doc.frameCount).toBe(1);
+    expect(
+      doc.warnings.some((w: string) => w.includes('1 of 1 frame image(s) were unavailable')),
+    ).toBe(true);
+    expect(doc.warnings.some((w: string) => w.includes('--force-refresh'))).toBe(true);
   });
 });

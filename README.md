@@ -111,13 +111,13 @@ The same engine is exposed as a one-shot command — this is what the `video` sk
 npx -y mcp-video-analyzer@latest analyze "https://youtu.be/jNQXAC9IVRw"
 ```
 
-stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath }` entries pointing at JPEG key frames copied to `--out` (default: `<tmp>/mcp-video-analyzer/<url-hash>/`). Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
+stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath, mimeType }` entries pointing at JPEG key frames copied to `--out` (default: `<tmp>/mcp-video-analyzer/<url-hash>/`). Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
 
 | Flag | Description |
 |------|-------------|
 | `--detail <level>` | `brief` (metadata + transcript, no frames), `standard` (default), `detailed` |
 | `--max-frames <n>` | Max key frames, 1–60 (default adapts to duration) |
-| `--fields <list>` | Comma-separated subset: `metadata,transcript,frames,comments,chapters,ocrResults,timeline,aiSummary` |
+| `--fields <list>` | Output filter — comma-separated subset: `metadata,transcript,frames,comments,chapters,ocrResults,timeline,aiSummary`. Filters the emitted JSON only; use `--detail brief` to actually skip download/frame extraction |
 | `--force-refresh` | Bypass the cache and re-analyze |
 | `--ocr-language <codes>` | Tesseract languages (default `eng+por`) |
 | `--model <name>` / `--language <code>` | Whisper overrides for the transcription fallback |

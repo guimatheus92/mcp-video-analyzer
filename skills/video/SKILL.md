@@ -2,7 +2,7 @@
 name: video
 description: Analyze a video (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook, direct URL, or local file) — transcript, key frames, OCR text, metadata, annotated timeline — and answer questions about it with timestamps.
 argument-hint: "<video-url-or-path> [question]"
-allowed-tools: Bash, Read
+allowed-tools: Bash, Read, mcp__video-analyzer
 homepage: https://github.com/guimatheus92/mcp-video-analyzer
 license: MIT
 ---
@@ -27,13 +27,13 @@ Run the one-shot CLI via Bash (first run downloads the npm package — slow is n
 npx -y mcp-video-analyzer@latest analyze "<video-url-or-path>"
 ```
 
-stdout is a single JSON document: `metadata`, `transcript` (timestamped entries), `ocrResults` (on-screen text), `timeline`, `warnings`, and `frames` — an array of `{ time, filePath }` pointing to JPEG key frames on disk. Then:
+stdout is a single JSON document: `metadata`, `transcript` (timestamped entries), `ocrResults` (on-screen text), `timeline`, `warnings`, and `frames` — an array of `{ time, filePath, mimeType }` pointing to JPEG key frames on disk. Then:
 
 1. Parse the JSON from stdout.
 2. Read the `frames[].filePath` images (in parallel) when the question needs visuals.
 3. Answer from transcript + OCR + frames, citing timestamps.
 
-Useful flags: `--detail brief|standard|detailed` (brief = metadata + transcript only, no frames), `--fields metadata,transcript` (skip everything else), `--max-frames <1-60>`, `--language <code>` (force transcription language), `--out <dir>` (where frames are copied), `--force-refresh`. Run `npx -y mcp-video-analyzer@latest analyze --help` for the full list.
+Useful flags: `--detail brief|standard|detailed` (brief = metadata + transcript only, no frame extraction — the fast/cheap path), `--fields metadata,transcript` (filters the emitted JSON only; frames are still computed at standard detail), `--max-frames <1-60>`, `--language <code>` (force transcription language), `--out <dir>` (where frames are copied), `--force-refresh`. Run `npx -y mcp-video-analyzer@latest analyze --help` for the full list.
 
 ## Prerequisites & degradation
 

@@ -1,7 +1,11 @@
 import { spawn } from 'node:child_process';
-import { join } from 'node:path';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import ffmpegPath from 'ffmpeg-static';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const testDir = fileURLToPath(new URL('.', import.meta.url));
 const entryPoint = join(testDir, '..', '..', 'dist', 'index.js');
@@ -13,9 +17,10 @@ interface RunResult {
   stderr: string;
 }
 
-function run(args: string[]): Promise<RunResult> {
+function run(args: string[], cwd?: string): Promise<RunResult> {
   return new Promise((resolve, reject) => {
     const proc = spawn('node', [entryPoint, ...args], {
+      cwd,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, NODE_NO_WARNINGS: '1' },
     });
@@ -33,6 +38,16 @@ function run(args: string[]): Promise<RunResult> {
 }
 
 describe('CLI smoke test', () => {
+  let scratch: string;
+
+  beforeAll(async () => {
+    scratch = await mkdtemp(join(tmpdir(), 'cli-smoke-'));
+  });
+
+  afterAll(async () => {
+    await rm(scratch, { recursive: true, force: true });
+  });
+
   it('analyze <local file> --detail brief prints a single JSON document on stdout', async () => {
     const { code, stdout, stderr } = await run(['analyze', tinyMp4, '--detail', 'brief']);
 
@@ -43,6 +58,82 @@ describe('CLI smoke test', () => {
     expect(Array.isArray(doc.warnings)).toBe(true);
     expect(typeof doc.frameCount).toBe('number');
   });
+
+  it('resolves a relative path against the shell cwd', async () => {
+    const { code, stdout, stderr } = await run(
+      ['analyze', 'tiny.mp4', '--detail', 'brief'],
+      dirname(tinyMp4),
+    );
+
+    expect(code, `stderr: ${stderr}`).toBe(0);
+    expect(JSON.parse(stdout).metadata?.title).toBe('tiny.mp4');
+  });
+
+  it('--fields metadata,transcript omits frames, keeps frameCount, creates no out dir', async () => {
+    const outDir = join(scratch, 'never-created');
+    const { code, stdout } = await run([
+      'analyze',
+      tinyMp4,
+      '--fields',
+      'metadata,transcript',
+      '--out',
+      outDir,
+    ]);
+
+    expect(code).toBe(0);
+    const doc = JSON.parse(stdout);
+    expect(doc.frames).toBeUndefined();
+    expect(typeof doc.frameCount).toBe('number');
+    expect(Array.isArray(doc.transcript)).toBe(true);
+    expect(existsSync(outDir)).toBe(false);
+  });
+
+  it('copies frame files that survive process exit (copy-before-cleanup invariant)', async () => {
+    // tiny.mp4 is a black clip whose frames are filtered out, so generate a
+    // clip with real content for the frames path.
+    const clip = join(scratch, 'testsrc.mp4');
+    await new Promise<void>((resolvePromise, rejectPromise) => {
+      const proc = spawn(
+        ffmpegPath as string,
+        [
+          '-y',
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc=duration=6:size=320x240:rate=10',
+          '-pix_fmt',
+          'yuv420p',
+          clip,
+        ],
+        { stdio: 'ignore' },
+      );
+      proc.on('error', rejectPromise);
+      proc.on('close', (code) =>
+        code === 0 ? resolvePromise() : rejectPromise(new Error(`ffmpeg exited ${code}`)),
+      );
+    });
+
+    const outDir = join(scratch, 'frames-out');
+    const { code, stdout, stderr } = await run([
+      'analyze',
+      clip,
+      '--max-frames',
+      '3',
+      '--out',
+      outDir,
+    ]);
+
+    expect(code, `stderr: ${stderr}`).toBe(0);
+    const doc = JSON.parse(stdout);
+    expect(doc.frameCount).toBeGreaterThanOrEqual(1);
+    expect(doc.frames.length).toBeGreaterThanOrEqual(1);
+    for (const frame of doc.frames) {
+      expect(frame.filePath.startsWith(outDir)).toBe(true);
+      // The whole point of the CLI: paths must still exist after the
+      // subprocess (and its temp-dir cleanup) has fully exited.
+      expect(existsSync(frame.filePath)).toBe(true);
+    }
+  }, 120_000);
 
   it('analyze --help exits 0 with usage on stdout', async () => {
     const { code, stdout } = await run(['analyze', '--help']);
@@ -55,6 +146,26 @@ describe('CLI smoke test', () => {
     expect(code).toBe(1);
     expect(stdout).toBe('');
     expect(stderr).toContain('supported video URL');
+  });
+
+  it('analyze with an invalid option value exits 1 with the formatted zod error', async () => {
+    const { code, stdout, stderr } = await run(['analyze', tinyMp4, '--detail', 'wrong']);
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Invalid option "detail"');
+  });
+
+  it('an unknown top-level command exits 1 with stderr only', async () => {
+    const { code, stdout, stderr } = await run(['bogus']);
+    expect(code).toBe(1);
+    expect(stdout).toBe('');
+    expect(stderr).toContain('Unknown command "bogus"');
+  });
+
+  it('top-level --help exits 0 with usage on stdout', async () => {
+    const { code, stdout } = await run(['--help']);
+    expect(code).toBe(0);
+    expect(stdout).toContain('Start the MCP server');
   });
 
   it('--version prints the version', async () => {
