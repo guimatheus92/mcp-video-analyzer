@@ -49,8 +49,13 @@ src/
 ├── adapters/     # Platform-specific logic (Loom, direct URL)
 ├── processors/   # Frame extraction, optimization, dedup, OCR, timeline
 ├── utils/        # URL detection, VTT parsing, temp files
+├── cli.ts        # One-shot `analyze` subcommand (same pipeline, JSON on stdout)
 └── types.ts      # Shared TypeScript interfaces
+skills/video/     # The portable `video` agent skill (SKILL.md contract)
+.claude-plugin/   # Claude Code plugin + marketplace manifests (with root .mcp.json)
 ```
+
+`skills/` and `.claude-plugin/` are installed from GitHub (Claude Code plugin marketplace / `npx skills add`), not from the npm tarball. The SKILL.md is a public contract: if you change MCP tool names, CLI flags, or the CLI JSON shape, update `skills/video/SKILL.md`, `README.md`, and `AGENTS.md` in the same PR.
 
 ## Key Conventions
 

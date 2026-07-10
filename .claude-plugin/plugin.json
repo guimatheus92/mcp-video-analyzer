@@ -1,0 +1,9 @@
+{
+  "name": "video",
+  "description": "Give your agent video input. /video analyzes a URL or local file — transcript, key frames, OCR, timeline — via the mcp-video-analyzer MCP server (auto-registered) or its CLI.",
+  "version": "0.7.0",
+  "author": {
+    "name": "Guilherme Matheus"
+  },
+  "homepage": "https://github.com/guimatheus92/mcp-video-analyzer"
+}

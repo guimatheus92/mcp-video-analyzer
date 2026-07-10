@@ -1,0 +1,18 @@
+{
+  "name": "mcp-video-analyzer",
+  "metadata": {
+    "description": "Video analysis for AI agents: transcripts, key frames, OCR, and annotated timelines from Loom, YouTube, Instagram, TikTok, direct URLs, and local files."
+  },
+  "owner": {
+    "name": "Guilherme Matheus"
+  },
+  "plugins": [
+    {
+      "name": "video",
+      "description": "Watch a video with /video — transcript, key frames, OCR, and timeline from a URL or local file, answered with timestamps.",
+      "source": "./",
+      "category": "productivity",
+      "homepage": "https://github.com/guimatheus92/mcp-video-analyzer"
+    }
+  ]
+}

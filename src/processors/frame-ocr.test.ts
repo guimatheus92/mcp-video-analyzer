@@ -1,5 +1,16 @@
-import { describe, expect, it } from 'vitest';
-import { isMeaningfulOcr } from './frame-ocr.js';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { describe, expect, it, vi } from 'vitest';
+import { isMeaningfulOcr, ocrFrames } from './frame-ocr.js';
+
+const createWorker = vi.hoisted(() =>
+  vi.fn(async () => ({
+    recognize: async () => ({ data: { text: 'mocked text', confidence: 90 } }),
+    terminate: async () => undefined,
+  })),
+);
+
+vi.mock('tesseract.js', () => ({ createWorker, default: { createWorker } }));
 
 describe('isMeaningfulOcr', () => {
   it('requires text length > 3 AND confidence > 50 (both strict)', () => {
@@ -14,5 +25,19 @@ describe('isMeaningfulOcr', () => {
     expect(isMeaningfulOcr({ time: '0:01', text: 'abcde', confidence: 51 })).toBe(true);
     // empty text → rejected
     expect(isMeaningfulOcr({ time: '0:01', text: '', confidence: 99 })).toBe(false);
+  });
+});
+
+describe('ocrFrames', () => {
+  it('routes traineddata downloads to the tmp cache dir, never the process cwd', async () => {
+    const results = await ocrFrames(
+      [{ time: '0:00', filePath: join(tmpdir(), 'nonexistent-frame.jpg'), mimeType: 'image/jpeg' }],
+      'eng',
+    );
+
+    expect(results).toHaveLength(1);
+    expect(createWorker).toHaveBeenCalledWith('eng', undefined, {
+      cachePath: join(tmpdir(), 'mcp-video-analyzer', 'tessdata'),
+    });
   });
 });

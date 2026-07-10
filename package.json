@@ -1,6 +1,6 @@
 {
   "name": "mcp-video-analyzer",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "MCP server for video analysis — extracts transcripts, key frames, OCR text, and metadata from video URLs and local files. Supports Loom, YouTube and other yt-dlp platforms, direct video URLs, and local video files.",
   "author": "guimatheus92",
   "license": "MIT",
@@ -59,6 +59,11 @@
     "ocr",
     "screen-recording",
     "claude",
+    "claude-code",
+    "claude-skill",
+    "claude-plugin",
+    "agent-skills",
+    "cli",
     "ai"
   ],
   "engines": {

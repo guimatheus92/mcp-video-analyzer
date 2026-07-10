@@ -1,5 +1,6 @@
-import { rm } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import type { IFrameResult, IOcrEntry } from '../types.js';
+import { persistentCacheDir } from '../utils/temp-files.js';
 import { preprocessForOcr } from './image-optimizer.js';
 
 /**
@@ -44,7 +45,16 @@ export async function ocrFrames(
   // improves OCR of stylized on-screen text. On by default; set
   // MCP_OCR_PREPROCESS=0 to OCR the raw frames instead.
   const preprocess = process.env.MCP_OCR_PREPROCESS !== '0';
-  const worker = await Tesseract.createWorker(language);
+
+  // Cache ~MB-sized .traineddata downloads in a stable temp dir — tesseract.js
+  // defaults to the process cwd, which pollutes whatever directory the
+  // server/CLI happens to run from (an agent's project root under npx).
+  // A mkdir failure propagates: both callers catch it into an "OCR failed:"
+  // warning, which beats a far-away traineddata write error (or a silent
+  // fallback to cwd — the very bug this cachePath exists to fix).
+  const cachePath = persistentCacheDir('tessdata');
+  await mkdir(cachePath, { recursive: true });
+  const worker = await Tesseract.createWorker(language, undefined, { cachePath });
 
   try {
     const results: IOcrResult[] = [];
