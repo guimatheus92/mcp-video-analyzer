@@ -76,10 +76,10 @@ Then restart Claude Desktop.
 Once installed, ask your AI assistant:
 
 ```
-Analyze this video: https://www.loom.com/share/bdebdfe44b294225ac718bad241a94fe
+Analyze this video: https://www.youtube.com/watch?v=jNQXAC9IVRw
 ```
 
-If the server is connected, it will automatically call the `analyze_video` tool.
+(also works with an Instagram/TikTok/Loom link, a direct `.mp4` URL, or a local file path). If the server is connected, it will automatically call the `analyze_video` tool.
 
 ## Tools
 
