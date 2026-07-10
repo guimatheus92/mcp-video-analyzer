@@ -1,14 +1,22 @@
-# mcp-video-analyzer
+<p align="center">
+  <img src="assets/icon.svg" width="88" height="88" alt="mcp-video-analyzer" />
+</p>
 
-<a href="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer">
-  <img width="380" height="200" src="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer/badge" alt="mcp-video-analyzer MCP server" />
-</a>
+<h1 align="center">mcp-video-analyzer</h1>
 
-Featured in [awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process).
+<p align="center"><em>Turn any video — YouTube, Instagram, TikTok, Loom, X, Vimeo, direct links, local files — into transcripts, key frames, OCR text, and metadata for AI agents.</em></p>
 
-MCP server for video analysis — extracts transcripts, key frames, and metadata from video URLs and local video files. Supports Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook (via yt-dlp), direct video URLs (.mp4, .mov, .mkv, .webm, and other common formats), and absolute paths to local video files.
+<p align="center">
+  <a href="https://www.npmjs.com/package/mcp-video-analyzer"><img src="https://img.shields.io/npm/v/mcp-video-analyzer?color=e8468f&labelColor=1e1e2e&logo=npm&logoColor=white" alt="npm" /></a>
+  <a href="https://github.com/guimatheus92/mcp-video-analyzer/blob/main/LICENSE"><img src="https://img.shields.io/npm/l/mcp-video-analyzer?color=8b5cf6&labelColor=1e1e2e" alt="license" /></a>
+  <a href="https://github.com/punkpeye/awesome-mcp-servers#-multimedia-process"><img src="https://img.shields.io/badge/awesome--mcp--servers-listed-ff4d6d?labelColor=1e1e2e" alt="awesome-mcp-servers" /></a>
+</p>
 
-No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does.
+<p align="center">
+  <a href="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer"><img width="360" height="190" src="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer/badge" alt="mcp-video-analyzer MCP server" /></a>
+</p>
+
+No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does — across Loom, the major yt-dlp platforms (YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook), direct video URLs, and local files.
 
 > **Want a full pipeline, not just a tool?** [social-knowledge-base](https://github.com/guimatheus92/social-knowledge-base) is built on top of this server — it downloads whole Instagram creator accounts (reels, stories, highlights), transcribes them, and turns the result into a searchable, RAG-queryable knowledge base with AI-generated notes. Use this MCP when you want per-video analysis inside an agent; use social-knowledge-base when you want to archive and query an entire account.
 
@@ -83,12 +91,28 @@ Analyze this video: https://www.youtube.com/watch?v=jNQXAC9IVRw
 
 ## Tools
 
-### `analyze_video` — Full video analysis
+Eight tools — the AI picks the cheapest one for the job and calls it automatically. Click any tool to expand its parameters and examples.
+
+| Tool | What it does |
+|------|--------------|
+| **`analyze_video`** | Full analysis: transcript + key frames + OCR + timeline + metadata |
+| **`analyze_videos`** | Batch version, one structured result per source (resumable) |
+| **`get_transcript`** | Transcript only (native captions or Whisper fallback) |
+| **`get_metadata`** | Metadata + comments + chapters, no download |
+| **`get_frames`** | Key frames only (scene-change or dense 1 fps) |
+| **`analyze_moment`** | Deep-dive on a time range (burst frames + transcript + OCR) |
+| **`get_frame_at`** | Single frame at a timestamp |
+| **`get_frame_burst`** | N frames across a narrow window (motion/animation) |
+
+<details>
+<summary><b><code>analyze_video</code></b> — full video analysis</summary>
+
+<br>
 
 Extracts everything from a video URL in one call:
 
 ```
-> Analyze this video: https://www.loom.com/share/abc123...
+> Analyze this video: https://www.youtube.com/watch?v=abc123...
 ```
 
 Returns:
@@ -111,7 +135,12 @@ Options:
 - `skipFrames` — skip frame extraction for transcript-only analysis
 - `model` / `language` / `initialPrompt` — per-call Whisper overrides for the transcription fallback (override `WHISPER_MODEL` / `WHISPER_LANGUAGE` / `WHISPER_PROMPT` for this call only — pick a heavier model or a domain glossary for one hard clip without restarting the server)
 
-### `analyze_videos` — Batch analysis
+</details>
+
+<details>
+<summary><b><code>analyze_videos</code></b> — batch analysis</summary>
+
+<br>
 
 ```
 > Analyze every .mp4 in this folder
@@ -119,7 +148,12 @@ Options:
 
 Runs `analyze_video` over a list of `sources` with a `concurrency` limit (default 2), returning one **structured result per source** — counts + warnings on success, or a per-item `error` on failure (one bad file never aborts the batch). Frame images are not inlined and full transcript/OCR/timeline are returned only when `fields` is set; otherwise you get counts. Pair with `MCP_WRITE_SIDECARS=1` (below) so each video's result persists to disk and a re-run resumes instead of recomputing.
 
-### `get_transcript` — Transcript only
+</details>
+
+<details>
+<summary><b><code>get_transcript</code></b> — transcript only</summary>
+
+<br>
 
 ```
 > Get the transcript from this video
@@ -127,7 +161,12 @@ Runs `analyze_video` over a list of `sources` with a `concurrency` limit (defaul
 
 Quick transcript extraction. Falls back to Whisper transcription when no native transcript is available. Accepts the same per-call `model` / `language` / `initialPrompt` overrides as `analyze_video`.
 
-### `get_metadata` — Metadata only
+</details>
+
+<details>
+<summary><b><code>get_metadata</code></b> — metadata only</summary>
+
+<br>
 
 ```
 > What's this video about?
@@ -135,7 +174,12 @@ Quick transcript extraction. Falls back to Whisper transcription when no native 
 
 Returns metadata, comments, chapters, and AI summary without downloading the video.
 
-### `get_frames` — Frames only
+</details>
+
+<details>
+<summary><b><code>get_frames</code></b> — frames only</summary>
+
+<br>
 
 ```
 > Extract frames from this video with dense sampling
@@ -145,7 +189,12 @@ Two modes:
 - **Scene-change detection** (default) — captures visual transitions
 - **Dense sampling** (`dense: true`) — 1 frame/sec for full coverage
 
-### `analyze_moment` — Deep-dive on a time range
+</details>
+
+<details>
+<summary><b><code>analyze_moment</code></b> — deep-dive on a time range</summary>
+
+<br>
 
 ```
 > Analyze what happens between 1:30 and 2:00 in this video
@@ -153,7 +202,12 @@ Two modes:
 
 Combines burst frame extraction + filtered transcript + OCR + annotated timeline for a focused segment. Use when you need to understand exactly what happens at a specific moment.
 
-### `get_frame_at` — Single frame at a timestamp
+</details>
+
+<details>
+<summary><b><code>get_frame_at</code></b> — single frame at a timestamp</summary>
+
+<br>
 
 ```
 > Show me the frame at 1:23 in this video
@@ -161,13 +215,20 @@ Combines burst frame extraction + filtered transcript + OCR + annotated timeline
 
 The AI reads the transcript, spots a critical moment, and requests the exact frame to see what's on screen.
 
-### `get_frame_burst` — N frames in a time range
+</details>
+
+<details>
+<summary><b><code>get_frame_burst</code></b> — N frames in a time range</summary>
+
+<br>
 
 ```
 > Show me 10 frames between 0:15 and 0:17 of this video
 ```
 
 For motion, vibration, animations, or fast scrolling — burst mode captures N frames in a narrow window so the AI can see frame-by-frame changes.
+
+</details>
 
 ## Detail Levels
 
