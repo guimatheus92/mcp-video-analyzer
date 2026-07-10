@@ -39,3 +39,7 @@ coverage/
 
 # Skilld references (recreated by `skilld install`)
 .skilld/
+
+# skilld dev-dependency skills — regenerated from .claude/skills/skilld-lock.yaml,
+# and kept out of git so `npx skills add` only discovers skills/video/
+.claude/skills/*-skilld/

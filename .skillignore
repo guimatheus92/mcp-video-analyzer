@@ -1,4 +1,0 @@
-# Limits Agent Skills discovery (npx skills add) to the public skill in
-# skills/video/ — .claude/skills/ holds auto-generated dev-dependency docs
-# (skilld), not product skills.
-.claude/
