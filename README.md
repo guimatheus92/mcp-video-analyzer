@@ -30,7 +30,31 @@ No existing video MCP combines **transcripts + visual frames + metadata** in one
 
 > Without yt-dlp or Chrome, direct URLs and local files still get frames — the bundled `ffmpeg-static` does the extraction, and Loom falls back to its own CDN download. Platform URLs (YouTube etc.) degrade to a clear "install yt-dlp" warning. Transcripts, metadata, and comments never require either.
 
-### Claude Code (CLI)
+There are three ways in: the **`/video` plugin** (Claude Code — slash command + MCP server auto-configured), a plain **MCP server** config (any MCP client), or the **portable skill + CLI** (Codex, Cursor, Copilot, and any agent with a shell — no MCP required).
+
+### Claude Code — `/video` plugin (recommended)
+
+```
+/plugin marketplace add guimatheus92/mcp-video-analyzer
+/plugin install video@mcp-video-analyzer
+```
+
+This adds the `/video` slash command **and** auto-registers the MCP server — no `claude mcp add` needed:
+
+```
+/video https://youtu.be/jNQXAC9IVRw what happens at 0:10?
+/video ~/Movies/screen-recording.mp4 when does the UI break?
+```
+
+### Other agents — Codex, Cursor, Copilot, Gemini CLI, …
+
+```bash
+npx skills add guimatheus92/mcp-video-analyzer
+```
+
+Installs the `video` skill ([Agent Skills](https://github.com/vercel-labs/skills) format) into every agent detected on your machine. Agents without the MCP server configured fall back to the bundled [CLI](#cli-one-shot-no-mcp-client) automatically — zero configuration.
+
+### Claude Code (MCP only)
 
 ```bash
 claude mcp add video-analyzer -- npx mcp-video-analyzer@latest
@@ -78,6 +102,28 @@ Add to your Claude Desktop config file:
 ```
 
 Then restart Claude Desktop.
+
+### CLI (one-shot, no MCP client)
+
+The same engine is exposed as a one-shot command — this is what the `video` skill uses on agents without MCP, and it works standalone in any terminal:
+
+```bash
+npx -y mcp-video-analyzer@latest analyze "https://youtu.be/jNQXAC9IVRw"
+```
+
+stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath }` entries pointing at JPEG key frames copied to `--out` (default: `<tmp>/mcp-video-analyzer/<url-hash>/`). Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
+
+| Flag | Description |
+|------|-------------|
+| `--detail <level>` | `brief` (metadata + transcript, no frames), `standard` (default), `detailed` |
+| `--max-frames <n>` | Max key frames, 1–60 (default adapts to duration) |
+| `--fields <list>` | Comma-separated subset: `metadata,transcript,frames,comments,chapters,ocrResults,timeline,aiSummary` |
+| `--force-refresh` | Bypass the cache and re-analyze |
+| `--ocr-language <codes>` | Tesseract languages (default `eng+por`) |
+| `--model <name>` / `--language <code>` | Whisper overrides for the transcription fallback |
+| `--out <dir>` | Where frame images are copied |
+
+Run with no arguments (`npx mcp-video-analyzer@latest`) to start the MCP stdio server — the CLI is purely additive.
 
 ### Verify it works
 

@@ -13,11 +13,28 @@ import { registerGetFrameBurst } from './tools/get-frame-burst.js';
 import { registerGetFrames } from './tools/get-frames.js';
 import { registerGetMetadata } from './tools/get-metadata.js';
 import { registerGetTranscript } from './tools/get-transcript.js';
+import { VERSION } from './version.js';
+
+/**
+ * Register the platform adapters (order matters: more specific first).
+ * Shared by the MCP server and the one-shot CLI (`src/cli.ts`).
+ *
+ * TwelveLabsAdapter precedes DirectAdapter: when TWELVELABS_API_KEY is set it
+ * takes over direct video URLs (Pegasus transcript + AI summary); otherwise
+ * it declines and DirectAdapter handles them as before.
+ */
+export function registerAllAdapters(): void {
+  registerAdapter(new LoomAdapter());
+  registerAdapter(new LocalFileAdapter());
+  registerAdapter(new YtDlpAdapter());
+  registerAdapter(new TwelveLabsAdapter());
+  registerAdapter(new DirectAdapter());
+}
 
 export function createServer(): FastMCP {
   const server = new FastMCP({
     name: 'mcp-video-analyzer',
-    version: '0.6.2',
+    version: VERSION,
     instructions: `Video analysis MCP server. Extracts transcripts, key frames, metadata, comments, OCR text, and annotated timelines from video URLs and local video files.
 
 AUTOMATIC BEHAVIOR — Do NOT wait for the user to ask:
@@ -62,15 +79,7 @@ Decision flow:
 6. User asks to see motion/animation → get_frame_burst`,
   });
 
-  // Register adapters (order matters: more specific first).
-  // TwelveLabsAdapter precedes DirectAdapter: when TWELVELABS_API_KEY is set it
-  // takes over direct video URLs (Pegasus transcript + AI summary); otherwise
-  // it declines and DirectAdapter handles them as before.
-  registerAdapter(new LoomAdapter());
-  registerAdapter(new LocalFileAdapter());
-  registerAdapter(new YtDlpAdapter());
-  registerAdapter(new TwelveLabsAdapter());
-  registerAdapter(new DirectAdapter());
+  registerAllAdapters();
 
   // Register tools
   registerAnalyzeVideo(server);

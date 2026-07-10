@@ -2,7 +2,7 @@
 
 ## Project
 
-MCP server for video analysis — extracts transcripts, key frames, metadata, OCR text, and annotated timelines from video URLs (Loom, YouTube and other yt-dlp platforms, direct links) and local video files.
+MCP server for video analysis — extracts transcripts, key frames, metadata, OCR text, and annotated timelines from video URLs (Loom, YouTube and other yt-dlp platforms, direct links) and local video files. The same engine is also exposed as a one-shot CLI (`mcp-video-analyzer analyze <url>`) and as the portable `/video` agent skill (`skills/video/SKILL.md` + Claude Code plugin).
 
 ## Commands
 
@@ -15,6 +15,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - `npm run lint:fix` — auto-fix lint issues
 - `npm run format` — auto-format with Prettier
 - `npm run inspect` — open FastMCP inspector for manual testing
+- `node dist/index.js analyze <url> [flags]` — run the one-shot CLI against the local build (after `npm run build`)
 - `npx tsx examples/generate.ts` — regenerate example outputs (run after changing tool output format, processors, or adapters)
 
 ## Architecture
@@ -23,6 +24,8 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - **Processors** (`src/processors/`) — shared processing: frame extraction (ffmpeg + browser fallback), image optimization + OCR preprocessing (sharp), frame dedup (dHash, visual + OCR-text-aware), OCR (tesseract.js), audio transcription (whisper), annotated timeline.
 - **Tools** (`src/tools/`) — MCP tool definitions registered on the FastMCP server. `analyze-core.ts` holds the shared cache + pipeline (`getAnalysis`) + content builder reused by both `analyze_video` and the batch `analyze_videos`.
 - **Utils** (`src/utils/`) — URL detection, VTT parsing, temp files, in-memory + on-disk cache (`cache.ts`, `analysis-sidecar.ts`), bounded concurrency (`concurrency.ts`), env-flag parsing (`env.ts`).
+- **CLI** (`src/cli.ts`) — one-shot `analyze` subcommand (`mcp-video-analyzer analyze <url>`) reusing the same `getAnalysis` pipeline: single JSON document on stdout, progress/errors on stderr, frame JPEGs copied to `--out` (default `<tmp>/mcp-video-analyzer/<url-hash>/`) *before* `handle.cleanup()`. `src/index.ts` dispatches on `argv[2]` — no args = MCP stdio server (Docker/smithery/MCP configs rely on this). Adapter registration is shared via `registerAllAdapters()` in `server.ts`. Version literal lives in `src/version.ts`.
+- **Skill + plugin** (`skills/video/SKILL.md`, `.claude-plugin/`, root `.mcp.json`) — the `/video` agent skill (Route A: MCP tools; Route B: the CLI via npx) and Claude Code plugin/marketplace manifests; the root `.mcp.json` is the plugin's bundled server config (auto-registered on `/plugin install`). Installed from GitHub, never shipped in the npm tarball (`files: ["dist"]`).
 
 ## Conventions
 
@@ -46,6 +49,9 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - The whisper CLI is run directly (no `--help` probe — it double-imports torch and crashes on Windows on non-ASCII help text); `ENOENT` distinguishes "not installed" (try next candidate) from "installed but crashed" (warn). Spawned with `PYTHONUTF8=1`/`PYTHONIOENCODING=utf-8` so multilingual transcripts don't crash the Python stdout codec. When NO backend is configured at all, `transcribeAudio` emits an actionable "No speech-to-text backend available" warning instead of a bare `[]`.
 - yt-dlp errors that look auth-related (login/cookies/private/age-restricted/empty-media/rate-limit) get a cookie hint appended by `extractYtDlpError` naming this server's env vars (`YTDLP_COOKIES` / `YTDLP_COOKIES_FROM_BROWSER`), not yt-dlp's raw CLI flags.
 - Persistent sidecars (`MCP_WRITE_SIDECARS=1`) write `<stem>.vtt` (Whisper transcripts only, never clobbering an existing one) + `<stem>.analysis.json` + `<stem>.frames/` next to local videos for resumable bulk processing; reads validate `mtime:size` + params.
+- CLI mode: stdout is reserved for the single JSON result document — progress, warnings-in-flight, and errors go to stderr. CLI flags validate through the shared `AnalyzeOptionsSchema` (no hand-rolled validation). Partial failures ride in `warnings[]` with exit 0; only hard failures exit 1.
+- `skills/video/SKILL.md` is a public contract: any change to MCP tool names, CLI flags, or the CLI JSON shape must update `skills/video/SKILL.md` + `README.md` + `AGENTS.md` in the same PR.
+- Tesseract `.traineddata` downloads are cached in `<tmp>/mcp-video-analyzer/tessdata` via `cachePath` (frame-ocr.ts) — never let them land in the process cwd (pollutes the agent's project dir under npx).
 
 ## Environment Variables
 
@@ -59,7 +65,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 
 ### Release Process
 
-1. **Bump version** in both `package.json` AND `src/server.ts` (must match).
+1. **Bump version** in `package.json`, `src/version.ts` AND `.claude-plugin/plugin.json` (must match).
 2. **Run checks**: `npm run check` (format, lint, typecheck, knip, tests).
 3. **Run smoke test**: `npm run test:smoke` (verifies MCP server starts and responds).
 4. **Run package verification**: `npm run verify-package` (packs tarball, installs in temp dir, verifies startup).
@@ -67,7 +73,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 6. **Commit & push**: commit version bump to main.
 7. **Publish to npm**: `npm publish`.
 8. **Create GitHub release**: `gh release create vX.Y.Z --title "vX.Y.Z" --generate-notes`.
-9. **Update .mcp.json**: pin new version in local MCP config.
+9. **Update local MCP config**: pin the new version in your machine's own MCP client config (NOT the repo-root `.mcp.json`, which is the plugin's bundled server config and stays on `@latest`).
 10. **Verify on npm**: `npm view mcp-video-analyzer version`.
 
 ### Notes
