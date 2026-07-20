@@ -91,9 +91,9 @@ describe('E2E: Loom video analysis', () => {
       }
 
       expect(statSync(videoPath).size).toBeGreaterThan(0);
-      // The merged DASH output is webm; asserting `.mp4` here is what the
-      // production code used to do wrong.
-      expect(videoPath).toMatch(/\.(mp4|webm|mkv)$/);
+      // Deliberately NOT asserting a container: which one Loom serves is
+      // exactly what the production code must stop assuming.
+      expect(videoPath.startsWith(tempDir)).toBe(true);
     });
 
     it('produces frames through the full pipeline', async (ctx) => {
@@ -101,8 +101,14 @@ describe('E2E: Loom video analysis', () => {
       const { result, cleanup } = await getAnalysis(TEST_LOOM_URL, params);
 
       try {
-        if (result.frames.length === 0 && isVideoUnavailable(result.warnings.join(' '))) {
-          ctx.skip(`TEST_LOOM_URL is unavailable: ${result.warnings.join(' ')}`);
+        // Only the DOWNLOAD warnings may excuse a skip. Matching the whole
+        // warnings blob would let an unrelated failure elsewhere in the
+        // pipeline silence this regression test.
+        const downloadWarnings = result.warnings
+          .filter((w) => /download failed|download with cookies|not installed/i.test(w))
+          .join(' ');
+        if (result.frames.length === 0 && isVideoUnavailable(downloadWarnings)) {
+          ctx.skip(`TEST_LOOM_URL is unavailable: ${downloadWarnings}`);
         }
 
         // The symptom reported in #24: transcript fine, frames empty.

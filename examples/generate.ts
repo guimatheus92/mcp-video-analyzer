@@ -69,9 +69,7 @@ async function main() {
   console.log('\n🎬 Downloading video...');
   const tempDir = await createTempDir('example-gen-');
   try {
-    // This used to fall back to a direct yt-dlp call, commented "the adapter
-    // may fail on DASH streams" — a local workaround for issue #24 instead of
-    // a fix. The adapter now handles DASH merges itself, so the fallback is gone.
+    // No local yt-dlp fallback: the adapter handles DASH merges (issue #24).
     const videoPath = await adapter.downloadVideo(LOOM_URL, tempDir, (w) =>
       console.log('  ⚠', w),
     );

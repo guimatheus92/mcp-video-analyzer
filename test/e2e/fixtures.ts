@@ -26,7 +26,9 @@ export const TEST_LOCAL_VIDEO_PATH = join(FIXTURES_DIR, 'tiny.mp4');
  * and a broad "any error → skip" would rebuild exactly that blind spot.
  */
 export function isVideoUnavailable(evidence: string): boolean {
-  return /PrivateVideo|HTTP 404|\b404\b|video unavailable|does not exist|has been removed|no longer available/i.test(
+  // No bare `404`: a transient fragment/CDN/tessdata 404 must NOT excuse a
+  // regression. Only a 404 attached to the video request counts.
+  return /PrivateVideo|HTTP(?: Error)? 404[^:]*$|video unavailable|does not exist|has been removed|no longer available/i.test(
     evidence,
   );
 }

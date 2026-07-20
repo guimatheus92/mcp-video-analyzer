@@ -18,10 +18,17 @@ import type { IVideoAdapter } from './adapter.interface.js';
 const require = createRequire(import.meta.url);
 const ffmpegPath: string = require('ffmpeg-static') as string;
 
-// Mentions Loom because LoomAdapter delegates its download here: Loom
-// transcript/metadata still work without yt-dlp, but frame extraction needs it.
 const YTDLP_MISSING =
-  'yt-dlp is not installed — install it ("pip install yt-dlp" or https://github.com/yt-dlp/yt-dlp#installation) to analyze YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs, and to extract frames from Loom videos.';
+  'yt-dlp is not installed — install it ("pip install yt-dlp" or https://github.com/yt-dlp/yt-dlp#installation) to analyze YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs.';
+
+/**
+ * Download-only variant. LoomAdapter delegates its download here, and Loom is
+ * not in the platform list above — a Loom user would otherwise get a hint
+ * naming every platform except the one they used. Kept separate from
+ * YTDLP_MISSING so `getTranscript`/`getMetadata` on a YouTube URL don't
+ * mention Loom.
+ */
+const YTDLP_MISSING_FOR_DOWNLOAD = `${YTDLP_MISSING} It is also what fetches and merges Loom's separate video+audio streams for frame extraction.`;
 
 /** YouTube -J payloads routinely exceed execFile's 1MB default buffer. */
 const INFO_MAX_BUFFER = 64 * 1024 * 1024;
@@ -41,13 +48,27 @@ interface YtDlpInfo {
   chapters?: { start_time: number; title: string }[] | null;
 }
 
-function commonArgs(): string[] {
-  return ['--no-warnings', '--no-playlist', ...ytdlpCookieArgs()];
+/**
+ * Flags every yt-dlp invocation needs. `cookies` is a parameter only so the
+ * download retry can drop them — keeping ONE definition, so a flag added here
+ * later can't silently skip the download path (that divergence-by-copy is
+ * exactly how issue #24 happened, one level up).
+ */
+function commonArgs(cookies: string[] = ytdlpCookieArgs()): string[] {
+  return ['--no-warnings', '--no-playlist', ...cookies];
 }
 
 /** Login-gated failures are fixable with cookies — matched to append the hint. */
 const AUTH_ERROR =
   /log[\s-]?in|cookies?|sign in|empty media response|private|age.?restrict|rate.?limit/i;
+
+/**
+ * The cookie SOURCE could not be read at all — distinct from "this video needs
+ * cookies". Container-verified message: `could not find edge cookies database`.
+ * Dropping cookies fixes this class and nothing else, so only it earns a retry.
+ */
+const COOKIE_SOURCE_UNUSABLE =
+  /could not (find|copy|open).{0,40}cookies?|cookies? (database|file).{0,30}(not found|locked|permission|denied)|failed to (decrypt|read|open).{0,20}cookies?|unsupported browser/i;
 
 /**
  * Pull the first `ERROR: ...` line out of yt-dlp's stderr so private /
@@ -63,6 +84,14 @@ function extractYtDlpError(err: unknown): string {
     const line = stderr.split(/\r?\n/).find((l) => l.startsWith('ERROR:'));
     if (line) msg = line;
   }
+  // With no `ERROR:` line (timeout, SIGKILL, ENOENT) execFile's message is
+  // "Command failed: <full argv>", which includes the cookie file path — and
+  // these strings reach warnings[], which is returned to the MCP client and
+  // usually logged. The path is not a credential but points straight at one.
+  msg = msg.replace(/(--cookies(?:-from-browser)?)[= ]\S+/g, '$1 <redacted>');
+  // "Set cookies" is circular advice when the cookie SOURCE is what failed —
+  // the user already configured it; it's unreadable. Caller says what to do.
+  if (COOKIE_SOURCE_UNUSABLE.test(msg)) return msg;
   if (AUTH_ERROR.test(msg)) {
     msg +=
       ' — this content likely requires authentication: set YTDLP_COOKIES=<Netscape cookie file> or YTDLP_COOKIES_FROM_BROWSER=chrome (on Windows the browser must be closed).';
@@ -225,11 +254,18 @@ export class YtDlpAdapter implements IVideoAdapter {
     url: string,
     destDir: string,
     onWarning?: (message: string) => void,
+    /**
+     * Beyond IVideoAdapter, for callers that have a working fallback and
+     * shouldn't wait the full budget before trying it — LoomAdapter passes the
+     * 120s it used before delegating here, so a stalled yt-dlp reaches Loom's
+     * CDN strategy as quickly as it used to.
+     */
+    timeout = 300000,
   ): Promise<string | null> {
     const ytDlp = await findYtDlp();
     if (!ytDlp) {
       // Without this the caller only sees "no frames" and has nothing to act on.
-      onWarning?.(YTDLP_MISSING);
+      onWarning?.(YTDLP_MISSING_FOR_DOWNLOAD);
       return null;
     }
 
@@ -237,21 +273,19 @@ export class YtDlpAdapter implements IVideoAdapter {
       '-o',
       // NEVER hardcode an extension here: on a DASH merge yt-dlp appends the
       // real container to the template, so `-o x.mp4` yields `x.mp4.webm`.
-      // %(ext)s + the glob below is what keeps the two in sync (issue #24).
+      // %(ext)s + pickDownloadedFile keeps the two in sync (issue #24).
       join(destDir, 'video.%(ext)s'),
-      '--no-warnings',
-      '--no-playlist',
-      ...cookies,
-      // Live streams would otherwise record until the 300s timeout kills them.
+      ...commonArgs(cookies),
+      // Live streams would otherwise record until the timeout kills them.
       '--match-filter',
       '!is_live',
       // Prefers ≤1080p when available (frames/OCR don't need more); sources
       // offering only higher resolutions still download.
       '-S',
       'res:1080',
-      // Lets yt-dlp merge DASH video+audio without a system ffmpeg. Mandatory:
-      // without it yt-dlp leaves the audio and video streams UNMERGED, and the
-      // glob below would happily return the audio-only file.
+      // Lets yt-dlp merge DASH video+audio without a system ffmpeg. Without it
+      // yt-dlp leaves the streams UNMERGED (verified in a container), which
+      // pickDownloadedFile then reports rather than guessing between them.
       '--ffmpeg-location',
       ffmpegPath,
       '-q',
@@ -260,39 +294,79 @@ export class YtDlpAdapter implements IVideoAdapter {
 
     const cookies = ytdlpCookieArgs();
     try {
-      await runYtDlp(ytDlp, downloadArgs(cookies), { timeout: 300000 });
+      await runYtDlp(ytDlp, downloadArgs(cookies), { timeout });
     } catch (err: unknown) {
-      // An unreadable cookie source (browser closed/absent, locked DB on
-      // Windows, no browser at all in a container) fails the WHOLE invocation,
-      // so a cookie env var set for one platform breaks downloads everywhere.
-      // Public videos don't need cookies — retry once without them.
-      if (cookies.length === 0) {
-        onWarning?.(`Video download failed: ${extractYtDlpError(err)}`);
+      const detail = extractYtDlpError(err);
+      // Retry ONLY when the cookie source itself is unreadable — that failure
+      // kills the whole invocation, so a cookie env var set for one platform
+      // breaks downloads everywhere, and public videos don't need cookies.
+      // Gating on the cause matters: retrying every failure would double the
+      // wall-clock (two 300s timeouts) and, for a genuinely private video,
+      // would replace the real error with a credential-less "login required"
+      // that tells the user to configure cookies they already configured.
+      if (cookies.length === 0 || !COOKIE_SOURCE_UNUSABLE.test(detail)) {
+        onWarning?.(`Video download failed: ${detail}`);
         return null;
       }
       onWarning?.(
-        `Video download with cookies failed (${extractYtDlpError(err)}) — retrying without them.`,
+        `Cookie source unusable (${detail}) — downloaded without cookies; private or ` +
+          `age-restricted videos will still fail until it is fixed.`,
       );
       try {
-        await runYtDlp(ytDlp, downloadArgs([]), { timeout: 300000 });
+        await runYtDlp(ytDlp, downloadArgs([]), { timeout });
       } catch (retryErr: unknown) {
         onWarning?.(`Video download failed: ${extractYtDlpError(retryErr)}`);
         return null;
       }
     }
 
+    return this.pickDownloadedFile(destDir, onWarning);
+  }
+
+  /**
+   * Picks yt-dlp's merged output out of `destDir`.
+   *
+   * Deliberately stricter than `startsWith('video.')`. yt-dlp names per-format
+   * streams `video.f<id>.<ext>` and in-progress files `.part`/`.ytdl`, and when
+   * a merge does not happen it leaves them behind — the reporter's environment
+   * had `video.fdash-raw-0.webm` (audio) next to `video.fdash-raw-original.webm`
+   * (video). A loose glob would return whichever `readdir` listed first,
+   * plausibly the audio-only stream: zero frames again, for a new reason.
+   */
+  private async pickDownloadedFile(
+    destDir: string,
+    onWarning?: (message: string) => void,
+  ): Promise<string | null> {
+    let files: string[];
     try {
-      // Merged output may be .mp4/.webm/.mkv depending on the source formats.
-      const files = await readdir(destDir);
-      const video = files.find((f) => f.startsWith('video.'));
-      if (video) return join(destDir, video);
+      files = await readdir(destDir);
+    } catch (e: unknown) {
+      // The download succeeded; losing it here silently is issue #24's shape.
+      onWarning?.(
+        `Download completed but the output directory could not be read: ` +
+          `${e instanceof Error ? e.message : String(e)}`,
+      );
+      return null;
+    }
+
+    // Merged output may be .mp4/.webm/.mkv depending on the source formats,
+    // but it never carries a per-format `.f<id>` infix.
+    const merged = files.filter((f) => /^video\.[a-z0-9]+$/i.test(f));
+    if (merged.length === 1) return join(destDir, merged[0]);
+
+    const leftovers = files.filter((f) => f.startsWith('video.'));
+    if (leftovers.length === 0) {
       onWarning?.(
         'yt-dlp finished without producing a file — live streams are skipped by design (recordings only).',
       );
       return null;
-    } catch {
-      return null;
     }
+
+    onWarning?.(
+      `yt-dlp left ${leftovers.length} output files (${leftovers.join(', ')}) — the audio and ` +
+        `video streams were probably not merged. Check that ffmpeg is available at ${ffmpegPath}.`,
+    );
+    return null;
   }
 
   // In-flight -J memo: getMetadata and getChapters run concurrently in the

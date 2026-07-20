@@ -440,7 +440,139 @@ describe('YtDlpAdapter', () => {
         expect(path).toBe(join(tempDir, 'video.webm'));
         expect(attempts).toHaveLength(2);
         expect(attempts[1]).not.toContain('--cookies-from-browser');
-        expect(warnings.join(' ')).toContain('retrying without them');
+        // Surfaced even though the download succeeded — it's the only signal
+        // the user's cookie source is broken. Worded as a diagnosis, not a
+        // failure, so a successful run doesn't look like a failed one.
+        expect(warnings.join(' ')).toContain('Cookie source unusable');
+        expect(warnings.join(' ')).toContain('downloaded without cookies');
+        // No "set YTDLP_COOKIES=..." hint here: the user already set it and it
+        // is unreadable. Telling them to set it is the #24 misdirection class.
+        expect(warnings.join(' ')).not.toContain('set YTDLP_COOKIES=');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // Retrying every failure would double the wall-clock and, for a genuinely
+    // private video, replace the real error with a credential-less "login
+    // required" that tells the user to configure cookies they already have.
+    it('does not retry when the failure is unrelated to the cookie source', async () => {
+      vi.stubEnv('YTDLP_COOKIES_FROM_BROWSER', 'edge');
+      const tempDir = await createTempDir();
+      try {
+        let calls = 0;
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          calls += 1;
+          throw Object.assign(new Error('Command failed'), {
+            stderr: 'ERROR: Private video. Sign in if you have been granted access\n',
+          });
+        };
+        const warnings: string[] = [];
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) =>
+          warnings.push(w),
+        );
+
+        expect(path).toBeNull();
+        expect(calls).toBe(1);
+        // The real reason survives, with the cookie hint that actually helps.
+        expect(warnings.join(' ')).toContain('Private video');
+        expect(warnings.join(' ')).toContain('YTDLP_COOKIES');
+        expect(warnings.join(' ')).not.toContain('downloaded without cookies');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('reports the underlying failure when the cookie-free retry also fails', async () => {
+      vi.stubEnv('YTDLP_COOKIES_FROM_BROWSER', 'edge');
+      const tempDir = await createTempDir();
+      try {
+        let calls = 0;
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          calls += 1;
+          throw Object.assign(new Error('Command failed'), {
+            stderr: args.includes('--cookies-from-browser')
+              ? 'ERROR: could not find edge cookies database\n'
+              : 'ERROR: Requested format is not available\n',
+          });
+        };
+        const warnings: string[] = [];
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) =>
+          warnings.push(w),
+        );
+
+        expect(path).toBeNull();
+        expect(calls).toBe(2);
+        expect(warnings.join(' ')).toContain('Requested format is not available');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // The reporter's environment produced exactly this state. A loose
+    // `startsWith('video.')` glob would return whichever readdir listed first
+    // — plausibly the 2.8MB audio stream: zero frames again, new cause.
+    it('refuses to return an unmerged stream when yt-dlp could not merge', async () => {
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          const stem = args[args.indexOf('-o') + 1].replace('.%(ext)s', '');
+          writeFileSync(`${stem}.fdash-raw-0.webm`, 'audio');
+          writeFileSync(`${stem}.fdash-raw-original.webm`, 'video-much-larger');
+          return ok();
+        };
+        const warnings: string[] = [];
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) =>
+          warnings.push(w),
+        );
+
+        expect(path).toBeNull();
+        expect(warnings.join(' ')).toContain('not merged');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('ignores in-progress .part files left by a previous attempt', async () => {
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          const stem = args[args.indexOf('-o') + 1].replace('.%(ext)s', '');
+          writeFileSync(`${stem}.f251.webm.part`, 'partial');
+          writeFileSync(`${stem}.webm`, 'merged');
+          return ok();
+        };
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir);
+        expect(path).toBe(join(tempDir, 'video.webm'));
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // With no `ERROR:` line (timeout/SIGKILL/ENOENT) execFile's message is the
+    // full argv. These strings reach warnings[], which goes to the MCP client
+    // and is usually logged — and LoomAdapter now forwards them where it
+    // previously swallowed them, so the exposure got wider, not narrower.
+    it('redacts the cookie file path from argv-style failures', async () => {
+      vi.stubEnv('YTDLP_COOKIES', 'C:/secrets/loom-cookies.txt');
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          // No stderr ERROR: line — the fallback path.
+          throw new Error(
+            'Command failed: yt-dlp --cookies C:/secrets/loom-cookies.txt -o /tmp/video.%(ext)s https://youtu.be/abc123',
+          );
+        };
+        const warnings: string[] = [];
+        await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) => warnings.push(w));
+
+        expect(warnings.join(' ')).not.toContain('C:/secrets/loom-cookies.txt');
+        expect(warnings.join(' ')).toContain('<redacted>');
       } finally {
         await cleanupTempDir(tempDir);
       }

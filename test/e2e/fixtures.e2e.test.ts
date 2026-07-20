@@ -25,6 +25,11 @@ describe('isVideoUnavailable', () => {
     'Loom CDN returned HTTP 500',
     'socket hang up',
     '',
+    // Transient 404s on sub-resources: a fragment retry, a tessdata fetch.
+    // These must fail loudly — excusing them turns the #24 regression test
+    // into a no-op run that reports success.
+    'ERROR: unable to download video data: HTTP Error 404: Not Found (fragment 3 of 40)',
+    'Tesseract traineddata fetch failed: 404',
   ])('does NOT excuse %j', (evidence) => {
     expect(isVideoUnavailable(evidence)).toBe(false);
   });

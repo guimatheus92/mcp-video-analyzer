@@ -34,7 +34,10 @@ jobs:
       # so the Loom/frame e2e tests would silently prove nothing. That blind
       # spot is why issue #24 shipped. Runner only — the published image is
       # unchanged.
-      - run: pipx install yt-dlp
+      # Pinned like every other dependency here (npm ci is lockfile-pinned):
+      # the tests need *a* working yt-dlp, not the newest one, and an
+      # unpinned install would run unreviewed code next to GITHUB_TOKEN.
+      - run: pipx install yt-dlp==2026.6.9
       - run: yt-dlp --version
       - run: npm ci
       - run: npm run build

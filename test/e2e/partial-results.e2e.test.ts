@@ -35,9 +35,11 @@ describe('E2E: Partial results (Loom, skipFrames)', () => {
     expect(Array.isArray(transcript)).toBe(true);
     expect(Array.isArray(comments)).toBe(true);
 
-    // No video download attempted = no frames
-    const videoPath = await adapter.downloadVideo(TEST_LOOM_URL, '/tmp');
-    expect(videoPath).toBeNull();
+    // A `downloadVideo(...) === null` assertion used to live here, commented
+    // "No video download attempted = no frames". It was the same could-never-
+    // fail shape that hid issue #24, unrelated to this test's subject, and it
+    // wrote 44MB into a hardcoded /tmp. Download behaviour is asserted in
+    // analyze-loom.e2e.test.ts against the real outcome.
   });
 
   it('handles non-existent Loom video gracefully', async () => {

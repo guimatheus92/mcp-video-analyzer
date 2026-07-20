@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync } from 'node:fs';
+import { createWriteStream, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -228,22 +228,43 @@ export class LoomAdapter implements IVideoAdapter {
     const reasons: string[] = [];
 
     // Strategy 1: yt-dlp (best quality, merges DASH video+audio-only Looms).
+    // 120s rather than the 300s default: Loom has a second strategy below, so
+    // a stalled yt-dlp should reach it as fast as it did before delegation.
     const viaYtDlp = await this.ytdlp
-      .downloadVideo(url, destDir, (m) => reasons.push(m))
+      .downloadVideo(url, destDir, (m) => reasons.push(m), 120000)
       .catch((e: unknown) => {
         reasons.push(e instanceof Error ? e.message : String(e));
         return null;
       });
-    if (viaYtDlp) return viaYtDlp;
+    if (viaYtDlp) {
+      // Forward non-fatal notes (e.g. "cookie source unusable") even on
+      // success — otherwise a degraded yt-dlp setup stays invisible on Loom
+      // while the identical situation warns on every other platform.
+      for (const reason of reasons) onWarning?.(reason);
+      return viaYtDlp;
+    }
 
     // Strategy 2: direct HTTP download via Loom CDN URL.
     const videoId = extractLoomId(url);
-    const videoUrl = videoId ? await this.fetchVideoUrl(videoId).catch(() => null) : null;
-    if (!videoUrl) {
-      // Also covers transcoded-url answering 204 (OK, but no body to parse).
-      reasons.push('Loom exposed no downloadable CDN URL for this video');
-    } else {
-      const outputPath = join(destDir, `${videoId ?? 'loom_video'}.mp4`);
+    let videoUrl: string | null = null;
+    if (videoId) {
+      try {
+        videoUrl = await this.fetchVideoUrl(videoId);
+        if (!videoUrl) {
+          // Also covers transcoded-url answering 204 (OK, but no body to parse)
+          // and the GraphQL fallback resolving to PrivateVideo.
+          reasons.push('Loom exposed no downloadable CDN URL (video may be private or deleted)');
+        }
+      } catch (e: unknown) {
+        reasons.push(`Loom CDN URL lookup failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+
+    if (videoUrl) {
+      // ponytail: `.mp4` here is cosmetic — only ffmpeg-static reads this file
+      // and it sniffs the container. Derive it from Content-Type if anything
+      // downstream ever branches on the suffix.
+      const outputPath = join(destDir, `${videoId}.mp4`);
       try {
         const response = await fetch(videoUrl);
         if (!response.ok || !response.body) {
@@ -253,8 +274,10 @@ export class LoomAdapter implements IVideoAdapter {
             response.body as Parameters<typeof Readable.fromWeb>[0],
           );
           await pipeline(nodeStream, createWriteStream(outputPath));
-          if (existsSync(outputPath)) return outputPath;
-          reasons.push('Loom CDN stream produced no file');
+          // createWriteStream creates the file on open, so existsSync is true
+          // even for an empty body — check content, not presence.
+          if (existsSync(outputPath) && statSync(outputPath).size > 0) return outputPath;
+          reasons.push('Loom CDN returned an empty body');
         }
       } catch (e: unknown) {
         reasons.push(`Loom CDN download failed: ${e instanceof Error ? e.message : String(e)}`);
