@@ -172,8 +172,13 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       await progress(100, 'Frames extracted');
 
+      // Degrade like analyze_video rather than throwing: a zero-frame result
+      // (extraction failure OR everything filtered as black/duplicate) returns
+      // frameCount: 0 with the accumulated warnings — which carry the real,
+      // actionable reason. The old throw discarded that whole `warnings` array
+      // and emitted a generic message (issue #26).
       if (frames.length === 0) {
-        throw new UserError(
+        warnings.push(
           isLocal
             ? 'Could not extract any frames from this local file — ffmpeg produced no frames (the file may be unreadable, zero-length, or have no decodable video stream).'
             : 'Could not extract any frames. Install yt-dlp or Chrome/Chromium for frame extraction.',

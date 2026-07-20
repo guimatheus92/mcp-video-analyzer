@@ -1,5 +1,5 @@
 import type { FastMCP } from 'fastmcp';
-import { UserError, imageContent } from 'fastmcp';
+import { imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
@@ -74,50 +74,73 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       await progress(0, `Starting burst extraction (${from} → ${to})...`);
 
       const tempDir = await createTempDir();
-      const downloadWarnings: string[] = [];
+      const warnings: string[] = [];
+
+      // Degrade like analyze_video instead of throwing: any zero-frame outcome
+      // (extractFrameBurst raising a raw ffmpeg Error, or producing no frames)
+      // returns frameCount: 0 with the accumulated warnings (issue #26). The old
+      // code threw and discarded the download warnings that explain why.
+      const zeroFrames = (reason: string) => {
+        warnings.push(reason);
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ frameCount: 0, from, to, warnings }, null, 2),
+            },
+          ],
+        };
+      };
 
       // Strategy 1: Download video + ffmpeg burst extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
-          downloadWarnings.push(w),
-        );
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
 
         if (videoPath) {
           await progress(40, 'Video downloaded, extracting burst frames...');
 
-          const frames = await extractFrameBurst(videoPath, tempDir, from, to, frameCount);
+          try {
+            const frames = await extractFrameBurst(videoPath, tempDir, from, to, frameCount);
 
-          await progress(70, `Extracted ${frames.length} frames, optimizing...`);
+            if (frames.length > 0) {
+              await progress(70, `Extracted ${frames.length} frames, optimizing...`);
 
-          const optimizedPaths = await optimizeFrames(
-            frames.map((f) => f.filePath),
-            tempDir,
-          );
+              const optimizedPaths = await optimizeFrames(
+                frames.map((f) => f.filePath),
+                tempDir,
+              );
 
-          await progress(100, 'Burst extraction complete');
+              await progress(100, 'Burst extraction complete');
 
-          const content: (
-            | { type: 'text'; text: string }
-            | Awaited<ReturnType<typeof imageContent>>
-          )[] = [
-            {
-              type: 'text' as const,
-              text: `Extracted ${optimizedPaths.length} frames from ${from} to ${to}`,
-            },
-          ];
+              const content: (
+                | { type: 'text'; text: string }
+                | Awaited<ReturnType<typeof imageContent>>
+              )[] = [
+                {
+                  type: 'text' as const,
+                  text: `Extracted ${optimizedPaths.length} frames from ${from} to ${to}`,
+                },
+              ];
 
-          for (const path of optimizedPaths) {
-            content.push(await imageContent({ path }));
+              for (const path of optimizedPaths) {
+                content.push(await imageContent({ path }));
+              }
+
+              return { content };
+            }
+            return zeroFrames(`ffmpeg produced no frames between ${from} and ${to}.`);
+          } catch (e: unknown) {
+            return zeroFrames(
+              `Could not extract burst frames: ${e instanceof Error ? e.message : String(e)}`,
+            );
           }
-
-          return { content };
         }
       }
 
       // Strategy 2: Browser-based extraction (fallback) — not applicable to
       // local files (puppeteer.goto() can't load fs paths reliably).
       if (toLocalPath(url) !== null) {
-        throw new UserError(
+        return zeroFrames(
           'Failed to extract frames from local video. Install ffmpeg or check that the file is a valid video.',
         );
       }
@@ -130,7 +153,12 @@ Returns: N images evenly distributed between the from and to timestamps.`,
         Math.round(fromSeconds + i * interval),
       );
 
-      const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps });
+      const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps }).catch(
+        (e: unknown) => {
+          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+          return [];
+        },
+      );
 
       if (browserFrames.length > 0) {
         await progress(100, 'Burst extraction complete');
@@ -152,11 +180,8 @@ Returns: N images evenly distributed between the from and to timestamps.`,
         return { content };
       }
 
-      throw new UserError(
-        [
-          'Failed to extract frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
-          ...downloadWarnings,
-        ].join(' '),
+      return zeroFrames(
+        'Failed to extract frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
       );
     },
   });

@@ -1,5 +1,5 @@
 import type { FastMCP } from 'fastmcp';
-import { UserError, imageContent } from 'fastmcp';
+import { imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
@@ -61,36 +61,57 @@ Returns: A single image of the video frame at the specified timestamp.`,
       await progress(0, 'Starting frame extraction...');
 
       const tempDir = await createTempDir();
-      const downloadWarnings: string[] = [];
+      const warnings: string[] = [];
+
+      // Degrade like analyze_video instead of throwing: on any failure to
+      // produce the frame, return frameCount: 0 with the accumulated warnings
+      // (issue #26). The old code threw — a raw ffmpeg Error from extractFrameAt
+      // (leaking the command line) or a UserError — discarding the download
+      // warnings that explain why.
+      const zeroFrame = (reason: string) => {
+        warnings.push(reason);
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify({ frameCount: 0, timestamp, warnings }, null, 2),
+            },
+          ],
+        };
+      };
 
       // Strategy 1: Download video + ffmpeg extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
-          downloadWarnings.push(w),
-        );
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
 
         if (videoPath) {
           await progress(50, `Extracting frame at ${timestamp}...`);
 
-          const frame = await extractFrameAt(videoPath, tempDir, timestamp);
-          const optimizedPath = getTempFilePath(tempDir, `opt_frame_at.jpg`);
-          await optimizeFrame(frame.filePath, optimizedPath);
+          try {
+            const frame = await extractFrameAt(videoPath, tempDir, timestamp);
+            const optimizedPath = getTempFilePath(tempDir, `opt_frame_at.jpg`);
+            await optimizeFrame(frame.filePath, optimizedPath);
 
-          await progress(100, 'Frame extracted');
+            await progress(100, 'Frame extracted');
 
-          return {
-            content: [
-              { type: 'text' as const, text: `Frame extracted at ${timestamp}` },
-              await imageContent({ path: optimizedPath }),
-            ],
-          };
+            return {
+              content: [
+                { type: 'text' as const, text: `Frame extracted at ${timestamp}` },
+                await imageContent({ path: optimizedPath }),
+              ],
+            };
+          } catch (e: unknown) {
+            return zeroFrame(
+              `Could not extract a frame at ${timestamp}: ${e instanceof Error ? e.message : String(e)}`,
+            );
+          }
         }
       }
 
       // Strategy 2: Browser-based extraction (fallback) — not applicable to
       // local files (puppeteer.goto() can't load fs paths reliably).
       if (toLocalPath(url) !== null) {
-        throw new UserError(
+        return zeroFrame(
           'Failed to extract frame from local video. Install ffmpeg or check that the file is a valid video.',
         );
       }
@@ -99,6 +120,9 @@ Returns: A single image of the video frame at the specified timestamp.`,
       const seconds = parseTimestamp(timestamp);
       const browserFrames = await extractBrowserFrames(url, tempDir, {
         timestamps: [seconds],
+      }).catch((e: unknown) => {
+        warnings.push(`Browser extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+        return [];
       });
 
       if (browserFrames.length > 0) {
@@ -114,11 +138,8 @@ Returns: A single image of the video frame at the specified timestamp.`,
         };
       }
 
-      throw new UserError(
-        [
-          'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
-          ...downloadWarnings,
-        ].join(' '),
+      return zeroFrame(
+        'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
       );
     },
   });

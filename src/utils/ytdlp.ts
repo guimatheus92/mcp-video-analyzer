@@ -42,6 +42,14 @@ export interface YtDlpCommand {
 // probe hiccup in one adapter method can't silently drop a later strategy.
 let located: YtDlpCommand | null = null;
 
+// The standalone `yt-dlp` binary auto-extracts an embedded Python zipapp on its
+// first run, so a cold `--version` can take >7s under load (issue #26). 5s was
+// too short — it made a slow-but-present binary indistinguishable from an absent
+// one. This is nearly free to raise: a genuinely-missing binary rejects via
+// ENOENT in a few ms, never waiting for the timeout (which only fires on a real
+// hang), so the higher ceiling only ever helps the slow-cold-start case.
+const YTDLP_PROBE_TIMEOUT = 20_000;
+
 /** Test hook: clears the positive probe cache. */
 export function resetYtDlpLocator(): void {
   located = null;
@@ -59,7 +67,7 @@ export async function findYtDlp(): Promise<YtDlpCommand | null> {
 
   for (const bin of ['yt-dlp', 'yt-dlp.exe']) {
     try {
-      await execFile(bin, ['--version'], { timeout: 5000 });
+      await execFile(bin, ['--version'], { timeout: YTDLP_PROBE_TIMEOUT });
       located = { bin, prefix: [] };
       return located;
     } catch {
@@ -69,7 +77,7 @@ export async function findYtDlp(): Promise<YtDlpCommand | null> {
 
   // Try python module
   try {
-    await execFile('python', ['-m', 'yt_dlp', '--version'], { timeout: 5000 });
+    await execFile('python', ['-m', 'yt_dlp', '--version'], { timeout: YTDLP_PROBE_TIMEOUT });
     located = { bin: 'python', prefix: ['-m', 'yt_dlp'] };
     return located;
   } catch {
