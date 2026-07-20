@@ -17,6 +17,25 @@ type ToolExecute = (
   ctx: { reportProgress: (progress: unknown) => Promise<void> },
 ) => Promise<ToolResult>;
 
+// Shared parsers for the frame-tool JSON text block — CLAUDE.md: don't redefine
+// helpers in each test file.
+function parseDoc(result: ToolResult): { frameCount?: number; warnings?: string[] } {
+  const text = result.content.find((c) => c.type === 'text')?.text ?? '{}';
+  return JSON.parse(text);
+}
+/** `frameCount` from a tool's JSON text block. */
+export function frameCountOf(result: ToolResult): number {
+  return parseDoc(result).frameCount ?? 0;
+}
+/** `warnings` from a tool's JSON text block. */
+export function warningsOf(result: ToolResult): string[] {
+  return parseDoc(result).warnings ?? [];
+}
+/** Number of image content parts in a tool result. */
+export function imageCount(result: ToolResult): number {
+  return result.content.filter((c) => c.type === 'image').length;
+}
+
 /**
  * Capture a tool's `execute` by stubbing `server.addTool` — lets a unit test
  * drive the handler directly, with no MCP transport. The frame-tool tests had

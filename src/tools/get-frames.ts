@@ -89,14 +89,22 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       await progress(0, 'Starting frame extraction...');
 
-      // Get metadata for duration (needed for browser fallback)
-      const metadata = await adapter.getMetadata(url).catch(() => ({
-        platform: adapter.name,
-        title: 'Unknown',
-        duration: 0,
-        durationFormatted: '0:00',
-        url,
-      }));
+      // Get metadata for duration (needed for browser fallback). Surface the
+      // failure: the browser fallback is gated on duration > 0, so a swallowed
+      // metadata error would skip it and mislabel the result as "install
+      // yt-dlp" when the real cause was the metadata fetch.
+      const metadata = await adapter.getMetadata(url).catch((e: unknown) => {
+        warnings.push(
+          `Could not fetch video metadata: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        return {
+          platform: adapter.name,
+          title: 'Unknown',
+          duration: 0,
+          durationFormatted: '0:00',
+          url,
+        };
+      });
 
       let frames: { time: string; filePath: string; mimeType: string }[] = [];
 
@@ -146,6 +154,10 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
         });
       }
 
+      // Whether extraction produced anything before filtering — distinguishes
+      // "all frames filtered as black" from "nothing decodable" in the reason.
+      const extractedCount = frames.length;
+
       // Filter black/blank frames
       await progress(80, 'Filtering and deduplicating frames...');
       if (frames.length > 0) {
@@ -173,15 +185,19 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
       await progress(100, 'Frames extracted');
 
       // Degrade like analyze_video rather than throwing: a zero-frame result
-      // (extraction failure OR everything filtered as black/duplicate) returns
-      // frameCount: 0 with the accumulated warnings — which carry the real,
-      // actionable reason. The old throw discarded that whole `warnings` array
-      // and emitted a generic message (issue #26).
+      // (extraction failure, or every extracted frame filtered out as black)
+      // returns frameCount: 0 with the accumulated warnings — which carry the
+      // real, actionable reason. The old throw discarded that whole `warnings`
+      // array and emitted a generic message (issue #26). Dedup can't empty a
+      // non-empty set (it always keeps frame[0]), so a filtered-to-zero result
+      // is always the black-frame filter, not dedup.
       if (frames.length === 0) {
         warnings.push(
-          isLocal
-            ? 'Could not extract any frames from this local file — ffmpeg produced no frames (the file may be unreadable, zero-length, or have no decodable video stream).'
-            : 'Could not extract any frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
+          extractedCount > 0
+            ? 'Extracted frames were all filtered out as black/blank — the video may be DRM-protected or a blank screen.'
+            : isLocal
+              ? 'Could not extract any frames from this local file — ffmpeg produced no frames (the file may be unreadable, zero-length, or have no decodable video stream).'
+              : 'Could not extract any frames. Install yt-dlp or Chrome/Chromium for frame extraction.',
         );
       }
 

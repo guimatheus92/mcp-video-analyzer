@@ -1,5 +1,5 @@
 import type { FastMCP } from 'fastmcp';
-import { imageContent } from 'fastmcp';
+import { UserError, imageContent } from 'fastmcp';
 import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
@@ -71,25 +71,46 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       const adapter = getAdapter(url);
 
+      // Validate the range up front — malformed timestamps or a backwards range
+      // are caller mistakes and THROW (matching analyze_moment and CLAUDE.md),
+      // before the expensive download and before either strategy re-parses them
+      // and throws a raw Error. Only the extraction outcome degrades.
+      let fromSeconds: number;
+      let toSeconds: number;
+      try {
+        fromSeconds = parseTimestamp(from);
+        toSeconds = parseTimestamp(to);
+      } catch {
+        throw new UserError(
+          `Invalid timestamp in "${from}"–"${to}" — use a form like "0:15", "1:23", "01:23:45".`,
+        );
+      }
+      if (toSeconds <= fromSeconds) {
+        throw new UserError(`"from" timestamp (${from}) must be before "to" timestamp (${to}).`);
+      }
+
       await progress(0, `Starting burst extraction (${from} → ${to})...`);
 
       const tempDir = await createTempDir();
       const warnings: string[] = [];
 
-      // Degrade like analyze_video instead of throwing: any zero-frame outcome
-      // (extractFrameBurst raising a raw ffmpeg Error, or producing no frames)
-      // returns frameCount: 0 with the accumulated warnings (issue #26). The old
-      // code threw and discarded the download warnings that explain why.
+      // Uniform, parseable response: success and degraded (issue #26) paths emit
+      // the same JSON text block, plus any image(s).
+      const doc = (n: number) => ({
+        type: 'text' as const,
+        text: JSON.stringify({ frameCount: n, from, to, warnings }, null, 2),
+      });
+      const withImages = async (paths: string[]) => {
+        const content: (
+          | { type: 'text'; text: string }
+          | Awaited<ReturnType<typeof imageContent>>
+        )[] = [doc(paths.length)];
+        for (const path of paths) content.push(await imageContent({ path }));
+        return { content };
+      };
       const zeroFrames = (reason: string) => {
         warnings.push(reason);
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: JSON.stringify({ frameCount: 0, from, to, warnings }, null, 2),
-            },
-          ],
-        };
+        return { content: [doc(0)] };
       };
 
       // Strategy 1: Download video + ffmpeg burst extraction
@@ -99,41 +120,30 @@ Returns: N images evenly distributed between the from and to timestamps.`,
         if (videoPath) {
           await progress(40, 'Video downloaded, extracting burst frames...');
 
+          // Wrap ONLY the extractor: it raises a raw ffmpeg Error (leaking the
+          // command line) on an undecodable clip.
+          let frames;
           try {
-            const frames = await extractFrameBurst(videoPath, tempDir, from, to, frameCount);
-
-            if (frames.length > 0) {
-              await progress(70, `Extracted ${frames.length} frames, optimizing...`);
-
-              const optimizedPaths = await optimizeFrames(
-                frames.map((f) => f.filePath),
-                tempDir,
-              );
-
-              await progress(100, 'Burst extraction complete');
-
-              const content: (
-                | { type: 'text'; text: string }
-                | Awaited<ReturnType<typeof imageContent>>
-              )[] = [
-                {
-                  type: 'text' as const,
-                  text: `Extracted ${optimizedPaths.length} frames from ${from} to ${to}`,
-                },
-              ];
-
-              for (const path of optimizedPaths) {
-                content.push(await imageContent({ path }));
-              }
-
-              return { content };
-            }
-            return zeroFrames(`ffmpeg produced no frames between ${from} and ${to}.`);
-          } catch (e: unknown) {
+            frames = await extractFrameBurst(videoPath, tempDir, from, to, frameCount);
+          } catch {
             return zeroFrames(
-              `Could not extract burst frames: ${e instanceof Error ? e.message : String(e)}`,
+              `The video could not be decoded for this range — it may be corrupt, truncated, or in an unsupported format.`,
             );
           }
+
+          if (frames.length === 0) {
+            // ffmpeg ran but produced no files (e.g. the range is past the clip's end).
+            return zeroFrames(`ffmpeg produced no frames between ${from} and ${to}.`);
+          }
+
+          await progress(70, `Extracted ${frames.length} frames, optimizing...`);
+          const optimizedPaths = await optimizeFrames(
+            frames.map((f) => f.filePath),
+            tempDir,
+          ).catch(() => frames.map((f) => f.filePath));
+
+          await progress(100, 'Burst extraction complete');
+          return withImages(optimizedPaths);
         }
       }
 
@@ -146,8 +156,6 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       }
 
       await progress(30, 'Extracting frames via browser fallback...');
-      const fromSeconds = parseTimestamp(from);
-      const toSeconds = parseTimestamp(to);
       const interval = (toSeconds - fromSeconds) / Math.max(frameCount - 1, 1);
       const timestamps = Array.from({ length: frameCount }, (_, i) =>
         Math.round(fromSeconds + i * interval),
@@ -155,29 +163,14 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps }).catch(
         (e: unknown) => {
-          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.name : 'error'}`);
           return [];
         },
       );
 
       if (browserFrames.length > 0) {
         await progress(100, 'Burst extraction complete');
-
-        const content: (
-          | { type: 'text'; text: string }
-          | Awaited<ReturnType<typeof imageContent>>
-        )[] = [
-          {
-            type: 'text' as const,
-            text: `Extracted ${browserFrames.length} frames from ${from} to ${to} (via browser)`,
-          },
-        ];
-
-        for (const frame of browserFrames) {
-          content.push(await imageContent({ path: frame.filePath }));
-        }
-
-        return { content };
+        return withImages(browserFrames.map((f) => f.filePath));
       }
 
       return zeroFrames(

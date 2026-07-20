@@ -4,8 +4,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ffmpegPath from 'ffmpeg-static';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { generateTestClip } from '../helpers/index.js';
 
 const testDir = fileURLToPath(new URL('.', import.meta.url));
 const entryPoint = join(testDir, '..', '..', 'dist', 'index.js');
@@ -90,28 +90,9 @@ describe('CLI smoke test', () => {
 
   it('copies frame files that survive process exit (copy-before-cleanup invariant)', async () => {
     // tiny.mp4 is a black clip whose frames are filtered out, so generate a
-    // clip with real content for the frames path.
+    // clip with real content for the frames path (shared helper — one source).
     const clip = join(scratch, 'testsrc.mp4');
-    await new Promise<void>((resolvePromise, rejectPromise) => {
-      const proc = spawn(
-        ffmpegPath as string,
-        [
-          '-y',
-          '-f',
-          'lavfi',
-          '-i',
-          'testsrc=duration=6:size=320x240:rate=10',
-          '-pix_fmt',
-          'yuv420p',
-          clip,
-        ],
-        { stdio: 'ignore' },
-      );
-      proc.on('error', rejectPromise);
-      proc.on('close', (code) =>
-        code === 0 ? resolvePromise() : rejectPromise(new Error(`ffmpeg exited ${code}`)),
-      );
-    });
+    await generateTestClip(clip, 6);
 
     const outDir = join(scratch, 'frames-out');
     const { code, stdout, stderr } = await run([

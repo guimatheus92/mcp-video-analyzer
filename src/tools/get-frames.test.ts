@@ -6,22 +6,16 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import {
   FIXTURES_DIR,
   captureToolExecute,
+  frameCountOf,
   generateTestClip,
+  imageCount,
   noProgress,
+  warningsOf,
 } from '../../test/helpers/index.js';
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import type { IVideoAdapter } from '../adapters/adapter.interface.js';
 import { LocalFileAdapter } from '../adapters/local-file.adapter.js';
 import { registerGetFrames } from './get-frames.js';
-
-function frameCountOf(result: { content: { type: string; text?: string }[] }): number {
-  const text = result.content.find((c) => c.type === 'text')?.text ?? '{}';
-  return JSON.parse(text).frameCount;
-}
-function warningsOf(result: { content: { type: string; text?: string }[] }): string[] {
-  const text = result.content.find((c) => c.type === 'text')?.text ?? '{}';
-  return JSON.parse(text).warnings ?? [];
-}
 
 function createMockAdapter(overrides: Partial<IVideoAdapter> = {}): IVideoAdapter {
   return {
@@ -117,9 +111,11 @@ describe('get_frames zero-frame handling (issue #26)', () => {
     const result = await execute({ url: blackClip, options: { maxFrames: 5 } }, noProgress);
 
     expect(frameCountOf(result)).toBe(0);
-    expect(result.content.filter((c) => c.type === 'image')).toHaveLength(0);
-    // The reason must survive — the old throw discarded it.
-    expect(warningsOf(result).join(' ')).toMatch(/could not extract any frames|black/i);
+    expect(imageCount(result)).toBe(0);
+    // The reason must survive — the old throw discarded it. tiny.mp4 IS decodable
+    // (frames extract then filter as black), so the reason must say "filtered",
+    // not "no decodable stream".
+    expect(warningsOf(result).join(' ')).toMatch(/filtered out as black/i);
   });
 
   it('still returns frames for content that survives filtering', async () => {
@@ -127,6 +123,6 @@ describe('get_frames zero-frame handling (issue #26)', () => {
     const result = await execute({ url: realClip, options: { maxFrames: 5 } }, noProgress);
 
     expect(frameCountOf(result)).toBeGreaterThan(0);
-    expect(result.content.filter((c) => c.type === 'image').length).toBeGreaterThan(0);
+    expect(imageCount(result)).toBeGreaterThan(0);
   });
 });

@@ -121,7 +121,18 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       await progress(35, 'Video downloaded, extracting burst frames...');
 
-      const rawFrames = await extractFrameBurst(videoPath, tempDir, from, to, count);
+      // Degrade like analyze_video rather than throwing: extractFrameBurst
+      // raises a raw ffmpeg Error (which leaks its command line) on a corrupt
+      // or undecodable clip. Catching it keeps the transcript segment already
+      // fetched above, instead of failing the whole moment (issue #26 sibling).
+      const rawFrames = await extractFrameBurst(videoPath, tempDir, from, to, count).catch(
+        (e: unknown) => {
+          warnings.push(
+            `Could not extract frames for this range — the video may be corrupt, truncated, or in an unsupported format (${e instanceof Error ? e.name : 'error'}).`,
+          );
+          return [];
+        },
+      );
 
       await progress(55, `Extracted ${rawFrames.length} frames, optimizing...`);
 
