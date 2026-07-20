@@ -176,5 +176,40 @@ describe('LoomAdapter', () => {
       );
       expect(result).toBeNull();
     });
+
+    // Issue #24 was invisible because this path returned null with no warning:
+    // the user saw "no frames" and was told to install yt-dlp they already had.
+    it('always explains why it returned null', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+
+      const warnings: string[] = [];
+      const result = await adapter.downloadVideo(
+        'https://www.loom.com/share/abc123',
+        '/tmp/nonexistent',
+        (w) => warnings.push(w),
+      );
+
+      expect(result).toBeNull();
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Loom video download failed');
+      // Both strategies must account for themselves: the yt-dlp reason comes
+      // from the delegated adapter, the CDN one from the 204-no-body response.
+      expect(warnings[0]).toContain('yt-dlp is not installed');
+      expect(warnings[0]).toContain('no downloadable CDN URL');
+    });
+
+    // analyze-core.ts calls downloadVideo without a .catch — a rejection here
+    // would take down the whole analysis instead of degrading to warnings.
+    it('never rejects, even when the network throws', async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('socket hang up'));
+
+      const warnings: string[] = [];
+      await expect(
+        adapter.downloadVideo('https://www.loom.com/share/abc123', '/tmp/nonexistent', (w) =>
+          warnings.push(w),
+        ),
+      ).resolves.toBeNull();
+      expect(warnings.join(' ')).toContain('Loom video download failed');
+    });
   });
 });

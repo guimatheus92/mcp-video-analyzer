@@ -28,6 +28,6 @@ If your agent supports MCP, register the stdio server instead — richer tool se
 
 ## Notes
 
-- Platform URLs (YouTube, Instagram, TikTok, …) need `yt-dlp` on PATH; Loom, direct `.mp4/.webm/.mov` URLs, and local files don't.
+- Platform URLs (YouTube, Instagram, TikTok, …) need `yt-dlp` on PATH; direct `.mp4/.webm/.mov` URLs and local files don't. Loom transcript/metadata/comments don't either, but Loom **frames** do — Loom serves most videos as separate DASH video+audio streams.
 - The `warnings` array carries actionable hints (yt-dlp install, cookies via `YTDLP_COOKIES_FROM_BROWSER`, Whisper backends) — relay them, don't treat them as errors.
 - An empty transcript plus a "silent audio" warning means the video has no speech; that's content, not a failure.

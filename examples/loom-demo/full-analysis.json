@@ -242,20 +242,29 @@
       "filename": "scene_003.jpg",
       "time": "0:44",
       "mimeType": "image/jpeg"
+    },
+    {
+      "filename": "scene_004.jpg",
+      "time": "1:07",
+      "mimeType": "image/jpeg"
     }
   ],
   "ocrResults": [
     {
-      "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_001.jpg",
-      "text": "(skipped in generator)"
+      "file": "scene_001.jpg",
+      "text": "(skipped in generator — tesseract.js crashes on Node 24)"
     },
     {
-      "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_002.jpg",
-      "text": "(skipped in generator)"
+      "file": "scene_002.jpg",
+      "text": "(skipped in generator — tesseract.js crashes on Node 24)"
     },
     {
-      "file": "C:\\Users\\guilh\\AppData\\Local\\Temp\\example-gen-YoSBmt/opt_scene_003.jpg",
-      "text": "(skipped in generator)"
+      "file": "scene_003.jpg",
+      "text": "(skipped in generator — tesseract.js crashes on Node 24)"
+    },
+    {
+      "file": "scene_004.jpg",
+      "text": "(skipped in generator — tesseract.js crashes on Node 24)"
     }
   ],
   "timeline": [
@@ -356,6 +365,10 @@
       "time": "1:00",
       "seconds": 60,
       "frameIndex": 17
+    },
+    {
+      "time": "1:07",
+      "seconds": 67
     },
     {
       "time": "1:10",

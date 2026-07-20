@@ -10,5 +10,9 @@
   {
     "file": "scene_003.jpg",
     "text": "(skipped in generator — tesseract.js crashes on Node 24)"
+  },
+  {
+    "file": "scene_004.jpg",
+    "text": "(skipped in generator — tesseract.js crashes on Node 24)"
   }
 ]

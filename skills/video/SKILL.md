@@ -38,6 +38,6 @@ Useful flags: `--detail brief|standard|detailed` (brief = metadata + transcript 
 ## Prerequisites & degradation
 
 - Node.js 18+ (required). `ffmpeg` is bundled — no install needed.
-- Platform URLs (YouTube, Instagram, TikTok, …) require `yt-dlp` on PATH; Loom, direct `.mp4/.webm/.mov` URLs, and local files work without it.
+- Platform URLs (YouTube, Instagram, TikTok, …) require `yt-dlp` on PATH; direct `.mp4/.webm/.mov` URLs and local files work without it. Loom transcript, metadata, and comments need no `yt-dlp` either — but Loom **frame extraction** does, since Loom serves most videos as separate DASH video+audio streams.
 - The tool never fails on partial results: the `warnings` array carries actionable hints (yt-dlp install, `YTDLP_COOKIES_FROM_BROWSER` for Instagram/age-restricted, missing Whisper backend). Relay relevant warnings to the user instead of treating them as errors.
 - An empty transcript alongside a "silent audio" warning means the video genuinely has no speech (common for muted Reels/Stories) — that is content, not a failure.

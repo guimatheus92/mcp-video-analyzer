@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
@@ -287,6 +287,55 @@ describe('YtDlpAdapter', () => {
       }
     });
 
+    // Regression: issue #24. A DASH source with separate video+audio streams
+    // merges to webm, and yt-dlp appends the real container to the -o template.
+    // The old Loom code passed `-o <id>.mp4` and then checked for `<id>.mp4`,
+    // so a 44MB download was silently discarded.
+    it('returns the merged file when the container is not mp4 (DASH webm merge)', async () => {
+      const tempDir = await createTempDir();
+      try {
+        let captured: string[] = [];
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          captured = args;
+          const outTemplate = args[args.indexOf('-o') + 1];
+          writeFileSync(outTemplate.replace('%(ext)s', 'webm'), 'fake merged webm');
+          return ok();
+        };
+
+        const path = await adapter.downloadVideo('https://www.loom.com/share/abc123', tempDir);
+        expect(path).toBe(join(tempDir, 'video.webm'));
+        // The template must stay extension-agnostic — a literal extension is
+        // what caused #24.
+        expect(captured[captured.indexOf('-o') + 1]).toContain('%(ext)s');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // Without --ffmpeg-location, yt-dlp cannot merge DASH streams in our
+    // published image (no system ffmpeg) and leaves them UNMERGED — the glob
+    // above would then return the audio-only file. Verified in a container.
+    it('points yt-dlp at the bundled ffmpeg so DASH merging works without a system ffmpeg', async () => {
+      const tempDir = await createTempDir();
+      try {
+        let captured: string[] = [];
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          captured = args;
+          writeFileSync(args[args.indexOf('-o') + 1].replace('%(ext)s', 'webm'), 'v');
+          return ok();
+        };
+        await adapter.downloadVideo('https://youtu.be/abc123', tempDir);
+
+        const location = captured[captured.indexOf('--ffmpeg-location') + 1];
+        expect(captured).toContain('--ffmpeg-location');
+        expect(existsSync(location)).toBe(true);
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
     it('returns null when the download fails, reporting the reason via onWarning', async () => {
       const tempDir = await createTempDir();
       try {
@@ -349,6 +398,68 @@ describe('YtDlpAdapter', () => {
 
     it('returns null when yt-dlp is missing (never rejects)', async () => {
       expect(await adapter.downloadVideo('https://youtu.be/abc123', 'C:\\nowhere')).toBeNull();
+    });
+
+    // Otherwise the caller only sees "no frames" with nothing to act on — the
+    // exact complaint in issue #24. Loom is named because LoomAdapter delegates
+    // its download here.
+    it('reports the install hint via onWarning when yt-dlp is missing', async () => {
+      const warnings: string[] = [];
+      await adapter.downloadVideo('https://www.loom.com/share/abc123', 'C:\\nowhere', (w) =>
+        warnings.push(w),
+      );
+      expect(warnings.join(' ')).toContain('yt-dlp is not installed');
+      expect(warnings.join(' ')).toContain('Loom');
+    });
+
+    // An unreadable cookie source fails the WHOLE yt-dlp invocation (verified
+    // in a container: "could not find edge cookies database"), so a cookie env
+    // var set for Instagram would otherwise break every other platform too.
+    it('retries without cookies when the cookie source is unusable', async () => {
+      vi.stubEnv('YTDLP_COOKIES_FROM_BROWSER', 'edge');
+      const tempDir = await createTempDir();
+      try {
+        const attempts: string[][] = [];
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          attempts.push(args);
+          if (args.includes('--cookies-from-browser')) {
+            throw Object.assign(new Error('Command failed'), {
+              stderr: 'ERROR: could not find edge cookies database\n',
+            });
+          }
+          writeFileSync(args[args.indexOf('-o') + 1].replace('%(ext)s', 'webm'), 'v');
+          return ok();
+        };
+
+        const warnings: string[] = [];
+        const path = await adapter.downloadVideo('https://youtu.be/abc123', tempDir, (w) =>
+          warnings.push(w),
+        );
+
+        expect(path).toBe(join(tempDir, 'video.webm'));
+        expect(attempts).toHaveLength(2);
+        expect(attempts[1]).not.toContain('--cookies-from-browser');
+        expect(warnings.join(' ')).toContain('retrying without them');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('does not retry when no cookies were configured', async () => {
+      const tempDir = await createTempDir();
+      try {
+        let calls = 0;
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return ok();
+          calls += 1;
+          throw Object.assign(new Error('Command failed'), { stderr: 'ERROR: nope\n' });
+        };
+        expect(await adapter.downloadVideo('https://youtu.be/abc123', tempDir)).toBeNull();
+        expect(calls).toBe(1);
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
     });
   });
 });

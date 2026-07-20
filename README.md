@@ -302,12 +302,14 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 
 | Source | Transcript | Metadata | Comments | Frames | Auth |
 |--------|:----------:|:--------:|:--------:|:------:|:----:|
-| **Loom** | Yes | Yes | Yes | Yes | None |
+| **Loom** | Yes | Yes | Yes | Yes (needs yt-dlp — see note) | None |
 | **YouTube / Vimeo / TikTok / Instagram / X / Twitch / Dailymotion / Facebook** | Native captions (uploaded > auto-generated) or Whisper fallback | Yes (title, duration, uploader, views, chapters, upload date) | No | Yes (capped at 1080p) | yt-dlp installed; cookies for Instagram / age-restricted (see below) |
 | **Direct URL** (.mp4, .mov, .mkv, .webm, …) | No | Duration only | No | Yes | None |
 | **Direct URL + TwelveLabs** | Yes (Pegasus, best-effort) | Duration floor + title | No | Yes | `TWELVELABS_API_KEY` |
 | **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
 
+> **Loom frames**: transcript, metadata, and comments come straight from Loom's API with no extra tooling. Frame extraction is different — Loom serves most videos as separate DASH video+audio streams, so it needs [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp`) to fetch and merge them. Merging itself uses the bundled `ffmpeg-static`, so no system ffmpeg is required. Without yt-dlp you still get transcript + metadata + comments, plus a warning saying why frames are missing.
+>
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
 >
 > **Sidecar transcripts**: if a `clip.vtt`, `clip.srt`, `clip.en.vtt`, etc. lives next to `clip.mp4`, it's used as the transcript automatically — no Whisper roundtrip needed. SRT is converted to VTT in-memory.

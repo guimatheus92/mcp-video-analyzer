@@ -11,8 +11,8 @@ import type {
 } from '../types.js';
 import { detectPlatform, extractLoomId } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
-import { findYtDlp, runYtDlp } from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
+import { YtDlpAdapter } from './ytdlp.adapter.js';
 
 const LOOM_GRAPHQL_URL = 'https://www.loom.com/graphql';
 
@@ -103,6 +103,8 @@ function timestampFromMs(ms: number): string {
 
 export class LoomAdapter implements IVideoAdapter {
   readonly name = 'loom';
+  /** yt-dlp handles Loom natively; reuse the one correct download implementation. */
+  private readonly ytdlp = new YtDlpAdapter();
   readonly capabilities: IAdapterCapabilities = {
     transcript: true,
     metadata: true,
@@ -209,41 +211,57 @@ export class LoomAdapter implements IVideoAdapter {
     return null;
   }
 
-  async downloadVideo(url: string, destDir: string): Promise<string | null> {
+  /**
+   * Never rejects — the pipeline calls this without a catch.
+   *
+   * Strategy 1 delegates to YtDlpAdapter instead of re-implementing the yt-dlp
+   * call: this adapter used to pass `-o <id>.mp4`, but yt-dlp appends the real
+   * container when it merges DASH streams, so it wrote `<id>.mp4.webm` and the
+   * `.mp4` existence check silently discarded a perfectly good download
+   * (issue #24). One implementation means that can't drift apart again.
+   */
+  async downloadVideo(
+    url: string,
+    destDir: string,
+    onWarning?: (message: string) => void,
+  ): Promise<string | null> {
+    const reasons: string[] = [];
+
+    // Strategy 1: yt-dlp (best quality, merges DASH video+audio-only Looms).
+    const viaYtDlp = await this.ytdlp
+      .downloadVideo(url, destDir, (m) => reasons.push(m))
+      .catch((e: unknown) => {
+        reasons.push(e instanceof Error ? e.message : String(e));
+        return null;
+      });
+    if (viaYtDlp) return viaYtDlp;
+
+    // Strategy 2: direct HTTP download via Loom CDN URL.
     const videoId = extractLoomId(url);
-    const outputPath = join(destDir, `${videoId ?? 'loom_video'}.mp4`);
-
-    // Strategy 1: yt-dlp (best quality, handles edge cases)
-    const ytDlp = await findYtDlp();
-    if (ytDlp) {
-      try {
-        await runYtDlp(ytDlp, ['-o', outputPath, '--no-warnings', '-q', url], {
-          timeout: 120000,
-        });
-        if (existsSync(outputPath)) return outputPath;
-      } catch {
-        // Fall through to direct download
-      }
-    }
-
-    // Strategy 2: Direct HTTP download via Loom CDN URL
-    if (!videoId) return null;
-    const videoUrl = await this.fetchVideoUrl(videoId);
-    if (videoUrl) {
+    const videoUrl = videoId ? await this.fetchVideoUrl(videoId).catch(() => null) : null;
+    if (!videoUrl) {
+      // Also covers transcoded-url answering 204 (OK, but no body to parse).
+      reasons.push('Loom exposed no downloadable CDN URL for this video');
+    } else {
+      const outputPath = join(destDir, `${videoId ?? 'loom_video'}.mp4`);
       try {
         const response = await fetch(videoUrl);
-        if (response.ok && response.body) {
+        if (!response.ok || !response.body) {
+          reasons.push(`Loom CDN returned HTTP ${response.status}`);
+        } else {
           const nodeStream = Readable.fromWeb(
             response.body as Parameters<typeof Readable.fromWeb>[0],
           );
           await pipeline(nodeStream, createWriteStream(outputPath));
           if (existsSync(outputPath)) return outputPath;
+          reasons.push('Loom CDN stream produced no file');
         }
-      } catch {
-        // Download failed
+      } catch (e: unknown) {
+        reasons.push(`Loom CDN download failed: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
 
+    onWarning?.(`Loom video download failed — ${reasons.join('; ')}`);
     return null;
   }
 

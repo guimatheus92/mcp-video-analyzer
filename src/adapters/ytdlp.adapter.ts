@@ -18,8 +18,10 @@ import type { IVideoAdapter } from './adapter.interface.js';
 const require = createRequire(import.meta.url);
 const ffmpegPath: string = require('ffmpeg-static') as string;
 
+// Mentions Loom because LoomAdapter delegates its download here: Loom
+// transcript/metadata still work without yt-dlp, but frame extraction needs it.
 const YTDLP_MISSING =
-  'yt-dlp is not installed — install it ("pip install yt-dlp" or https://github.com/yt-dlp/yt-dlp#installation) to analyze YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs.';
+  'yt-dlp is not installed — install it ("pip install yt-dlp" or https://github.com/yt-dlp/yt-dlp#installation) to analyze YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs, and to extract frames from Loom videos.';
 
 /** YouTube -J payloads routinely exceed execFile's 1MB default buffer. */
 const INFO_MAX_BUFFER = 64 * 1024 * 1024;
@@ -225,33 +227,58 @@ export class YtDlpAdapter implements IVideoAdapter {
     onWarning?: (message: string) => void,
   ): Promise<string | null> {
     const ytDlp = await findYtDlp();
-    if (!ytDlp) return null;
-
-    try {
-      await runYtDlp(
-        ytDlp,
-        [
-          '-o',
-          join(destDir, 'video.%(ext)s'),
-          ...commonArgs(),
-          // Live streams would otherwise record until the 300s timeout kills them.
-          '--match-filter',
-          '!is_live',
-          // Prefers ≤1080p when available (frames/OCR don't need more); sources
-          // offering only higher resolutions still download.
-          '-S',
-          'res:1080',
-          // Lets yt-dlp merge DASH video+audio without a system ffmpeg.
-          '--ffmpeg-location',
-          ffmpegPath,
-          '-q',
-          url,
-        ],
-        { timeout: 300000 },
-      );
-    } catch (err: unknown) {
-      onWarning?.(`Video download failed: ${extractYtDlpError(err)}`);
+    if (!ytDlp) {
+      // Without this the caller only sees "no frames" and has nothing to act on.
+      onWarning?.(YTDLP_MISSING);
       return null;
+    }
+
+    const downloadArgs = (cookies: string[]): string[] => [
+      '-o',
+      // NEVER hardcode an extension here: on a DASH merge yt-dlp appends the
+      // real container to the template, so `-o x.mp4` yields `x.mp4.webm`.
+      // %(ext)s + the glob below is what keeps the two in sync (issue #24).
+      join(destDir, 'video.%(ext)s'),
+      '--no-warnings',
+      '--no-playlist',
+      ...cookies,
+      // Live streams would otherwise record until the 300s timeout kills them.
+      '--match-filter',
+      '!is_live',
+      // Prefers ≤1080p when available (frames/OCR don't need more); sources
+      // offering only higher resolutions still download.
+      '-S',
+      'res:1080',
+      // Lets yt-dlp merge DASH video+audio without a system ffmpeg. Mandatory:
+      // without it yt-dlp leaves the audio and video streams UNMERGED, and the
+      // glob below would happily return the audio-only file.
+      '--ffmpeg-location',
+      ffmpegPath,
+      '-q',
+      url,
+    ];
+
+    const cookies = ytdlpCookieArgs();
+    try {
+      await runYtDlp(ytDlp, downloadArgs(cookies), { timeout: 300000 });
+    } catch (err: unknown) {
+      // An unreadable cookie source (browser closed/absent, locked DB on
+      // Windows, no browser at all in a container) fails the WHOLE invocation,
+      // so a cookie env var set for one platform breaks downloads everywhere.
+      // Public videos don't need cookies — retry once without them.
+      if (cookies.length === 0) {
+        onWarning?.(`Video download failed: ${extractYtDlpError(err)}`);
+        return null;
+      }
+      onWarning?.(
+        `Video download with cookies failed (${extractYtDlpError(err)}) — retrying without them.`,
+      );
+      try {
+        await runYtDlp(ytDlp, downloadArgs([]), { timeout: 300000 });
+      } catch (retryErr: unknown) {
+        onWarning?.(`Video download failed: ${extractYtDlpError(retryErr)}`);
+        return null;
+      }
     }
 
     try {
