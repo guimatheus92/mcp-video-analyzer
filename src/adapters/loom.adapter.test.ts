@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { resetYtDlpLocator } from '../utils/ytdlp.js';
-import { LoomAdapter } from './loom.adapter.js';
+import { LoomAdapter, extensionFromContentType } from './loom.adapter.js';
 
 // Per-test yt-dlp behaviour. Default: absent, so findYtDlp resolves instantly
 // with no real exec calls. Tests that need a working yt-dlp reassign it.
@@ -302,6 +302,31 @@ describe('LoomAdapter', () => {
       }
     });
 
+    // Assuming `.mp4` on the fallback path would repeat, one branch over, the
+    // assumption that caused issue #24 on the yt-dlp path.
+    it('names the CDN file after the container the CDN actually sent', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v' }), {
+              status: 200,
+            });
+          }
+          return new Response('video-bytes', {
+            status: 200,
+            headers: { 'content-type': 'video/webm' },
+          });
+        }) as typeof fetch;
+
+        const result = await adapter.downloadVideo('https://www.loom.com/share/abc123', tempDir);
+        expect(result).toBe(join(tempDir, 'abc123.webm'));
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
     // createWriteStream creates the file on open, so an empty body used to
     // look like a successful download and yielded zero frames downstream.
     it('rejects an empty CDN body instead of returning a 0-byte file', async () => {
@@ -371,5 +396,21 @@ describe('LoomAdapter', () => {
       ).resolves.toBeNull();
       expect(warnings.join(' ')).toContain('Loom video download failed');
     });
+  });
+});
+
+describe('extensionFromContentType', () => {
+  it.each([
+    ['video/webm', 'webm'],
+    ['video/webm; codecs="vp9,opus"', 'webm'],
+    ['video/x-matroska', 'mkv'],
+    ['video/quicktime', 'mov'],
+    ['video/mp4', 'mp4'],
+  ])('maps %s to .%s', (contentType, expected) => {
+    expect(extensionFromContentType(contentType)).toBe(expected);
+  });
+
+  it.each([null, '', 'application/octet-stream'])('defaults to mp4 for %j', (contentType) => {
+    expect(extensionFromContentType(contentType)).toBe('mp4');
   });
 });

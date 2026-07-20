@@ -11,8 +11,8 @@ import type {
 } from '../types.js';
 import { detectPlatform, extractLoomId } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
+import { downloadViaYtDlp } from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
-import { YtDlpAdapter } from './ytdlp.adapter.js';
 
 const LOOM_GRAPHQL_URL = 'https://www.loom.com/graphql';
 
@@ -86,6 +86,26 @@ interface LoomCommentsData {
   };
 }
 
+/**
+ * Container extension for a CDN response, defaulting to mp4 when the header is
+ * missing or unrecognised. Only ffmpeg-static reads these files and it sniffs
+ * the container, so this is about not *claiming* something untrue rather than
+ * about correctness downstream.
+ */
+export function extensionFromContentType(contentType: string | null): string {
+  const type = contentType?.split(';')[0]?.trim().toLowerCase();
+  switch (type) {
+    case 'video/webm':
+      return 'webm';
+    case 'video/x-matroska':
+      return 'mkv';
+    case 'video/quicktime':
+      return 'mov';
+    default:
+      return 'mp4';
+  }
+}
+
 function formatDuration(seconds: number): string {
   const hrs = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
@@ -103,8 +123,6 @@ function timestampFromMs(ms: number): string {
 
 export class LoomAdapter implements IVideoAdapter {
   readonly name = 'loom';
-  /** yt-dlp handles Loom natively; reuse the one correct download implementation. */
-  private readonly ytdlp = new YtDlpAdapter();
   readonly capabilities: IAdapterCapabilities = {
     transcript: true,
     metadata: true,
@@ -229,13 +247,14 @@ export class LoomAdapter implements IVideoAdapter {
 
     // Strategy 1: yt-dlp (best quality, merges DASH video+audio-only Looms).
     // 120s rather than the 300s default: Loom has a second strategy below, so
-    // a stalled yt-dlp should reach it as fast as it did before delegation.
-    const viaYtDlp = await this.ytdlp
-      .downloadVideo(url, destDir, (m) => reasons.push(m), 120000)
-      .catch((e: unknown) => {
+    // a stalled yt-dlp should reach it as fast as it did before this shared
+    // implementation existed.
+    const viaYtDlp = await downloadViaYtDlp(url, destDir, (m) => reasons.push(m), 120000).catch(
+      (e: unknown) => {
         reasons.push(e instanceof Error ? e.message : String(e));
         return null;
-      });
+      },
+    );
     if (viaYtDlp) {
       // Forward non-fatal notes (e.g. "cookie source unusable") even on
       // success — otherwise a degraded yt-dlp setup stays invisible on Loom
@@ -261,15 +280,18 @@ export class LoomAdapter implements IVideoAdapter {
     }
 
     if (videoUrl) {
-      // ponytail: `.mp4` here is cosmetic — only ffmpeg-static reads this file
-      // and it sniffs the container. Derive it from Content-Type if anything
-      // downstream ever branches on the suffix.
-      const outputPath = join(destDir, `${videoId}.mp4`);
       try {
         const response = await fetch(videoUrl);
         if (!response.ok || !response.body) {
           reasons.push(`Loom CDN returned HTTP ${response.status}`);
         } else {
+          // Name the file after what the CDN actually sent. Assuming `.mp4`
+          // here would repeat, on the fallback path, the very assumption that
+          // caused issue #24 on the yt-dlp path.
+          const outputPath = join(
+            destDir,
+            `${videoId}.${extensionFromContentType(response.headers.get('content-type'))}`,
+          );
           const nodeStream = Readable.fromWeb(
             response.body as Parameters<typeof Readable.fromWeb>[0],
           );

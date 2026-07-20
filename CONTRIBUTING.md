@@ -71,7 +71,7 @@ skills/video/     # The portable `video` agent skill (SKILL.md contract)
 2. Create `src/adapters/your-platform.adapter.test.ts` with unit tests
 3. Register in `src/server.ts` via `registerAdapter()`
 4. Add URL pattern detection in `src/utils/url-detector.ts`
-5. If the platform downloads via yt-dlp, call `YtDlpAdapter.downloadVideo` instead of spawning yt-dlp yourself — it already handles `%(ext)s` output, DASH merging, cookie retry, and `onWarning` reporting
+5. If the platform downloads via yt-dlp, call `downloadViaYtDlp()` from `src/utils/ytdlp.ts` instead of spawning yt-dlp yourself — it already handles `%(ext)s` output, DASH merging, cookie retry, and `onWarning` reporting. Adapters are siblings: never import one adapter into another
 6. Run `npm run check` to verify everything passes
 
 ## Before you claim it works
