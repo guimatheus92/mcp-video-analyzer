@@ -74,6 +74,21 @@ skills/video/     # The portable `video` agent skill (SKILL.md contract)
 5. If the platform downloads via yt-dlp, call `YtDlpAdapter.downloadVideo` instead of spawning yt-dlp yourself — it already handles `%(ext)s` output, DASH merging, cookie retry, and `onWarning` reporting
 6. Run `npm run check` to verify everything passes
 
+## Before you claim it works
+
+`npm run check` never spawns yt-dlp, never downloads a video, and never installs the package — it can pass on a change that is broken for every user. Run:
+
+```bash
+npm run verify-all   # check → e2e → smoke → verify-package
+```
+
+Then report what actually ran. Listing commands you meant to run is how a PR ends up claiming coverage it doesn't have.
+
+Two habits that would have caught real bugs here:
+
+- **Prove a regression test fails without your fix.** Revert the fix locally, watch the new test go red, restore. If it stays green, it isn't a regression test. Pull the pre-fix code from git (`git show <commit>^:<path>`) rather than retyping it from memory — the shape you remember is rarely the shape that shipped.
+- **Grep for siblings before declaring a bug fixed.** The same broken pattern usually exists in more than one place.
+
 ## Updating Examples
 
 The `examples/loom-demo/` folder contains real outputs used as documentation and regression baselines. **Regenerate after any change to tool output format, processors, or adapters:**

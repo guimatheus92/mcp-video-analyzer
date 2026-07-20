@@ -54,6 +54,20 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - `skills/video/SKILL.md` is a public contract: any change to MCP tool names, CLI flags, or the CLI JSON shape must update `skills/video/SKILL.md` + `README.md` + `AGENTS.md` in the same PR.
 - Tesseract `.traineddata` downloads are cached in `<tmp>/mcp-video-analyzer/tessdata` via `cachePath` (frame-ocr.ts) — never let them land in the process cwd (pollutes the agent's project dir under npx).
 
+## Testing conventions
+
+These three exist because each was violated in the issue #24 fix and caught only in review. They are cheap to follow and expensive to skip.
+
+- **A regression guard must be proven against the real pre-fix code, pulled from git — never against a hand-written example.** The first source guard for #24 blacklisted literal extensions near `-o` and was "verified" by reintroducing the bug inline. The bug had actually been written as `const outputPath = join(destDir, \`${videoId}.mp4\`)` + `-o outputPath`, which the guard passed. Retrieve the real thing (`git show <fix-commit>^:<path>`), run the detector against it, and **pin that snippet as a test case** so the proof lives in the suite instead of in a PR description. Prefer positive assertions ("prove this is safe") over blacklists — "can't prove it" must fail, not pass.
+- **A test that cannot fail is worse than no test.** `test/e2e/analyze-loom.e2e.test.ts` asserted `downloadVideo(...) === null` and called it "(no auth)"; it passed whether the code worked or not, which is why a 44MB download being silently discarded went unnoticed for months. Watch for: asserting a null/empty result as the expected outcome, a `catch → skip` broad enough to swallow real failures, and any scan-style guard that asserts nothing when it matches nothing (always assert it scanned something). Guards live in `src/adapters/ytdlp-output-template.test.ts` and `test/e2e/download-destinations.e2e.test.ts`; both unit-test their own detector.
+- **When fixing a bug, grep the whole repo for siblings of the pattern before calling it fixed.** The same inverted assertion existed in `test/e2e/partial-results.e2e.test.ts` and shipped untouched in the first pass. One guard in the shared function beats a guard in every caller — and the sibling you don't look for is the one that stays broken.
+
+## Verifying a change
+
+`npm run check` is necessary, not sufficient — it never spawns yt-dlp, never downloads, and never installs the package. Run `npm run verify-all` (check → e2e → smoke → verify-package) before claiming a change works, and **report the actual output rather than the list of commands you intended to run**. The first #24 PR listed `npm run test:e2e` in its validation section without the full suite ever having been run; the individual files had been run instead.
+
+For anything touching adapters or downloads, also exercise it in a container — `npm run check` passes on a machine that happens to have a system ffmpeg, while the published image has none. The #24 fix needed `--ffmpeg-location` precisely because that difference was invisible on the host.
+
 ## Environment Variables
 
 - **Transcription:** `WHISPER_MODEL`, `WHISPER_LANGUAGE`, `WHISPER_PROMPT` (glossary → `--initial_prompt`), `WHISPER_BIN`, `WHISPER_DEVICE`/`WHISPER_COMPUTE`/`WHISPER_BEAM_SIZE`/`WHISPER_WORD_TIMESTAMPS` (env-gated — only passed to the CLI when set, so `openai-whisper` isn't broken by `whisper-ctranslate2`-only flags), `WHISPER_HF_MODEL` (opt-in), `OPENAI_API_KEY`.

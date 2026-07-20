@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
@@ -268,6 +268,92 @@ describe('LoomAdapter', () => {
       } finally {
         execHandler = () => new Error('not found');
         resetYtDlpLocator();
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // Every other test here asserts toBeNull(), so the branch that actually
+    // returns a CDN path never ran — an inverted condition or a lost `return`
+    // in the Strategy 2 rewrite would have shipped green.
+    it('falls back to the Loom CDN when yt-dlp is unavailable', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v.mp4' }), {
+              status: 200,
+            });
+          }
+          return new Response('video-bytes', { status: 200 });
+        }) as typeof fetch;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBe(join(tempDir, 'abc123.mp4'));
+        expect(statSync(result as string).size).toBeGreaterThan(0);
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // createWriteStream creates the file on open, so an empty body used to
+    // look like a successful download and yielded zero frames downstream.
+    it('rejects an empty CDN body instead of returning a 0-byte file', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v.mp4' }), {
+              status: 200,
+            });
+          }
+          return new Response('', { status: 200 });
+        }) as typeof fetch;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBeNull();
+        expect(warnings.join(' ')).toContain('empty body');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('reports the CDN status when Loom answers non-OK', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v.mp4' }), {
+              status: 200,
+            });
+          }
+          return new Response('nope', { status: 403 });
+        }) as typeof fetch;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBeNull();
+        expect(warnings.join(' ')).toContain('HTTP 403');
+      } finally {
         await cleanupTempDir(tempDir);
       }
     });

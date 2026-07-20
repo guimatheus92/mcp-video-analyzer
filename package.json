@@ -37,6 +37,7 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run knip && npm run test",
+    "verify-all": "npm run check && npm run test:e2e && npm run test:smoke && npm run verify-package",
     "test:smoke": "npm run build && vitest run --config vitest.smoke.config.ts",
     "verify-package": "npm run build && npx tsx scripts/verify-package.ts",
     "prepublishOnly": "npm run check && npm run build"
