@@ -1,17 +1,21 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR } from '../../test/helpers/index.js';
-import { LoomAdapter } from './loom.adapter.js';
+import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
+import { resetYtDlpLocator } from '../utils/ytdlp.js';
+import { LoomAdapter, extensionFromContentType } from './loom.adapter.js';
 
-// Mock child_process so findYtDlp resolves instantly (no real exec calls)
+// Per-test yt-dlp behaviour. Default: absent, so findYtDlp resolves instantly
+// with no real exec calls. Tests that need a working yt-dlp reassign it.
+let execHandler: (cmd: string, args: string[]) => Error | null = () => new Error('not found');
+
 vi.mock('node:child_process', () => ({
-  execFile: (_cmd: string, _args: string[], _opts: unknown, cb?: (...args: unknown[]) => void) => {
-    if (typeof _opts === 'function') {
-      (_opts as (...args: unknown[]) => void)(new Error('not found'), '', '');
-    } else if (typeof cb === 'function') {
-      cb(new Error('not found'), '', '');
-    }
+  execFile: (cmd: string, args: string[], _opts: unknown, cb?: (...args: unknown[]) => void) => {
+    const callback = (typeof _opts === 'function' ? _opts : cb) as
+      | ((...args: unknown[]) => void)
+      | undefined;
+    callback?.(execHandler(cmd, args), '', '');
   },
 }));
 
@@ -176,5 +180,237 @@ describe('LoomAdapter', () => {
       );
       expect(result).toBeNull();
     });
+
+    // Issue #24 was invisible because this path returned null with no warning:
+    // the user saw "no frames" and was told to install yt-dlp they already had.
+    it('always explains why it returned null', async () => {
+      globalThis.fetch = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+
+      const warnings: string[] = [];
+      const result = await adapter.downloadVideo(
+        'https://www.loom.com/share/abc123',
+        '/tmp/nonexistent',
+        (w) => warnings.push(w),
+      );
+
+      expect(result).toBeNull();
+      expect(warnings).toHaveLength(1);
+      expect(warnings[0]).toContain('Loom video download failed');
+      // Both strategies must account for themselves: the yt-dlp reason comes
+      // from the delegated adapter, the CDN one from the 204-no-body response
+      // (204 is `ok`, so response.json() throws on the empty body).
+      expect(warnings[0]).toContain('yt-dlp is not installed');
+      expect(warnings[0]).toMatch(/CDN URL lookup failed|no downloadable CDN URL/);
+    });
+
+    // The headline fix. Every other Loom download test runs with yt-dlp
+    // absent, so without this the delegation wiring itself is only covered by
+    // a network-dependent e2e that is allowed to skip — dropping the early
+    // return would pass the entire unit suite.
+    it('returns the delegate’s merged file and skips the CDN strategy', async () => {
+      resetYtDlpLocator();
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return null;
+          const template = args[args.indexOf('-o') + 1];
+          // Loom's DASH merge lands as webm, not mp4.
+          writeFileSync(template.replace('%(ext)s', 'webm'), 'merged');
+          return null;
+        };
+        const fetchSpy = vi.fn();
+        globalThis.fetch = fetchSpy;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBe(join(tempDir, 'video.webm'));
+        expect(fetchSpy).not.toHaveBeenCalled();
+        expect(warnings).toEqual([]);
+      } finally {
+        execHandler = () => new Error('not found');
+        resetYtDlpLocator();
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // A degraded-but-working yt-dlp setup must stay visible on Loom, exactly
+    // as it is on every other platform.
+    it('forwards non-fatal delegate warnings even when the download succeeds', async () => {
+      resetYtDlpLocator();
+      vi.stubEnv('YTDLP_COOKIES_FROM_BROWSER', 'edge');
+      const tempDir = await createTempDir();
+      try {
+        execHandler = (_cmd, args) => {
+          if (args.includes('--version')) return null;
+          if (args.includes('--cookies-from-browser')) {
+            return Object.assign(new Error('Command failed'), {
+              stderr: 'ERROR: could not find edge cookies database\n',
+            });
+          }
+          writeFileSync(args[args.indexOf('-o') + 1].replace('%(ext)s', 'webm'), 'merged');
+          return null;
+        };
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBe(join(tempDir, 'video.webm'));
+        expect(warnings.join(' ')).toContain('Cookie source unusable');
+      } finally {
+        execHandler = () => new Error('not found');
+        resetYtDlpLocator();
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // Every other test here asserts toBeNull(), so the branch that actually
+    // returns a CDN path never ran — an inverted condition or a lost `return`
+    // in the Strategy 2 rewrite would have shipped green.
+    it('falls back to the Loom CDN when yt-dlp is unavailable', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v.mp4' }), {
+              status: 200,
+            });
+          }
+          return new Response('video-bytes', { status: 200 });
+        }) as typeof fetch;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBe(join(tempDir, 'abc123.mp4'));
+        expect(statSync(result as string).size).toBeGreaterThan(0);
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // Assuming `.mp4` on the fallback path would repeat, one branch over, the
+    // assumption that caused issue #24 on the yt-dlp path.
+    it('names the CDN file after the container the CDN actually sent', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v' }), {
+              status: 200,
+            });
+          }
+          return new Response('video-bytes', {
+            status: 200,
+            headers: { 'content-type': 'video/webm' },
+          });
+        }) as typeof fetch;
+
+        const result = await adapter.downloadVideo('https://www.loom.com/share/abc123', tempDir);
+        expect(result).toBe(join(tempDir, 'abc123.webm'));
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // createWriteStream creates the file on open, so an empty body used to
+    // look like a successful download and yielded zero frames downstream.
+    it('rejects an empty CDN body instead of returning a 0-byte file', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v.mp4' }), {
+              status: 200,
+            });
+          }
+          return new Response('', { status: 200 });
+        }) as typeof fetch;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBeNull();
+        expect(warnings.join(' ')).toContain('empty body');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    it('reports the CDN status when Loom answers non-OK', async () => {
+      const tempDir = await createTempDir();
+      try {
+        globalThis.fetch = vi.fn(async (input: RequestInfo | URL) => {
+          const target = String(input);
+          if (target.includes('transcoded-url')) {
+            return new Response(JSON.stringify({ url: 'https://cdn.loom.test/v.mp4' }), {
+              status: 200,
+            });
+          }
+          return new Response('nope', { status: 403 });
+        }) as typeof fetch;
+
+        const warnings: string[] = [];
+        const result = await adapter.downloadVideo(
+          'https://www.loom.com/share/abc123',
+          tempDir,
+          (w) => warnings.push(w),
+        );
+
+        expect(result).toBeNull();
+        expect(warnings.join(' ')).toContain('HTTP 403');
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    });
+
+    // analyze-core.ts calls downloadVideo without a .catch — a rejection here
+    // would take down the whole analysis instead of degrading to warnings.
+    it('never rejects, even when the network throws', async () => {
+      globalThis.fetch = vi.fn().mockRejectedValue(new Error('socket hang up'));
+
+      const warnings: string[] = [];
+      await expect(
+        adapter.downloadVideo('https://www.loom.com/share/abc123', '/tmp/nonexistent', (w) =>
+          warnings.push(w),
+        ),
+      ).resolves.toBeNull();
+      expect(warnings.join(' ')).toContain('Loom video download failed');
+    });
+  });
+});
+
+describe('extensionFromContentType', () => {
+  it.each([
+    ['video/webm', 'webm'],
+    ['video/webm; codecs="vp9,opus"', 'webm'],
+    ['video/x-matroska', 'mkv'],
+    ['video/quicktime', 'mov'],
+    ['video/mp4', 'mp4'],
+  ])('maps %s to .%s', (contentType, expected) => {
+    expect(extensionFromContentType(contentType)).toBe(expected);
+  });
+
+  it.each([null, '', 'application/octet-stream'])('defaults to mp4 for %j', (contentType) => {
+    expect(extensionFromContentType(contentType)).toBe('mp4');
   });
 });

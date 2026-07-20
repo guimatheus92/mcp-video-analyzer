@@ -1,5 +1,4 @@
 import { readFile, readdir } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { formatTimestamp } from '../processors/frame-extractor.js';
 import type {
@@ -12,14 +11,15 @@ import type {
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { detectPlatform } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
-import { findYtDlp, runYtDlp, ytdlpCookieArgs } from '../utils/ytdlp.js';
+import {
+  YTDLP_MISSING,
+  commonArgs,
+  downloadViaYtDlp,
+  extractYtDlpError,
+  findYtDlp,
+  runYtDlp,
+} from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
-
-const require = createRequire(import.meta.url);
-const ffmpegPath: string = require('ffmpeg-static') as string;
-
-const YTDLP_MISSING =
-  'yt-dlp is not installed — install it ("pip install yt-dlp" or https://github.com/yt-dlp/yt-dlp#installation) to analyze YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs.';
 
 /** YouTube -J payloads routinely exceed execFile's 1MB default buffer. */
 const INFO_MAX_BUFFER = 64 * 1024 * 1024;
@@ -37,35 +37,6 @@ interface YtDlpInfo {
   height?: number;
   fps?: number;
   chapters?: { start_time: number; title: string }[] | null;
-}
-
-function commonArgs(): string[] {
-  return ['--no-warnings', '--no-playlist', ...ytdlpCookieArgs()];
-}
-
-/** Login-gated failures are fixable with cookies — matched to append the hint. */
-const AUTH_ERROR =
-  /log[\s-]?in|cookies?|sign in|empty media response|private|age.?restrict|rate.?limit/i;
-
-/**
- * Pull the first `ERROR: ...` line out of yt-dlp's stderr so private /
- * age-restricted / unavailable videos surface as readable warnings. When the
- * failure looks auth-related (common for Instagram/private posts), append a
- * hint pointing at the env vars THIS server reads — yt-dlp's own message only
- * mentions raw `--cookies` CLI flags the MCP user never invokes.
- */
-function extractYtDlpError(err: unknown): string {
-  const stderr = (err as { stderr?: string })?.stderr;
-  let msg = err instanceof Error ? err.message : String(err);
-  if (typeof stderr === 'string') {
-    const line = stderr.split(/\r?\n/).find((l) => l.startsWith('ERROR:'));
-    if (line) msg = line;
-  }
-  if (AUTH_ERROR.test(msg)) {
-    msg +=
-      ' — this content likely requires authentication: set YTDLP_COOKIES=<Netscape cookie file> or YTDLP_COOKIES_FROM_BROWSER=chrome (on Windows the browser must be closed).';
-  }
-  return msg;
 }
 
 /**
@@ -223,49 +194,9 @@ export class YtDlpAdapter implements IVideoAdapter {
     url: string,
     destDir: string,
     onWarning?: (message: string) => void,
+    timeout?: number,
   ): Promise<string | null> {
-    const ytDlp = await findYtDlp();
-    if (!ytDlp) return null;
-
-    try {
-      await runYtDlp(
-        ytDlp,
-        [
-          '-o',
-          join(destDir, 'video.%(ext)s'),
-          ...commonArgs(),
-          // Live streams would otherwise record until the 300s timeout kills them.
-          '--match-filter',
-          '!is_live',
-          // Prefers ≤1080p when available (frames/OCR don't need more); sources
-          // offering only higher resolutions still download.
-          '-S',
-          'res:1080',
-          // Lets yt-dlp merge DASH video+audio without a system ffmpeg.
-          '--ffmpeg-location',
-          ffmpegPath,
-          '-q',
-          url,
-        ],
-        { timeout: 300000 },
-      );
-    } catch (err: unknown) {
-      onWarning?.(`Video download failed: ${extractYtDlpError(err)}`);
-      return null;
-    }
-
-    try {
-      // Merged output may be .mp4/.webm/.mkv depending on the source formats.
-      const files = await readdir(destDir);
-      const video = files.find((f) => f.startsWith('video.'));
-      if (video) return join(destDir, video);
-      onWarning?.(
-        'yt-dlp finished without producing a file — live streams are skipped by design (recordings only).',
-      );
-      return null;
-    } catch {
-      return null;
-    }
+    return downloadViaYtDlp(url, destDir, onWarning, timeout);
   }
 
   // In-flight -J memo: getMetadata and getChapters run concurrently in the

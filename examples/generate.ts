@@ -9,12 +9,7 @@
  */
 
 import { writeFile, mkdir, copyFile } from 'node:fs/promises';
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-
-const execFileAsync = promisify(execFile);
 import { registerAdapter, clearAdapters, getAdapter } from '../src/adapters/adapter.interface.js';
 import { DirectAdapter } from '../src/adapters/direct.adapter.js';
 import { LoomAdapter } from '../src/adapters/loom.adapter.js';
@@ -74,23 +69,10 @@ async function main() {
   console.log('\n🎬 Downloading video...');
   const tempDir = await createTempDir('example-gen-');
   try {
-    // Use yt-dlp directly since the adapter may fail on DASH streams
-    let videoPath = await adapter.downloadVideo(LOOM_URL, tempDir);
-    if (!videoPath) {
-      console.log('  Adapter download failed, trying yt-dlp directly...');
-      const outPath = join(tempDir, 'loom_video.%(ext)s');
-      try {
-        await execFileAsync('yt-dlp', ['-o', outPath, '--no-warnings', '-q', LOOM_URL], {
-          timeout: 120000,
-        });
-        // Find whatever file yt-dlp created
-        const { stdout } = await execFileAsync('yt-dlp', ['--print', 'filename', '-o', outPath, LOOM_URL]);
-        const actualPath = stdout.trim();
-        if (existsSync(actualPath)) videoPath = actualPath;
-      } catch (e) {
-        console.log('  ⚠ yt-dlp failed:', (e as Error).message);
-      }
-    }
+    // No local yt-dlp fallback: the adapter handles DASH merges (issue #24).
+    const videoPath = await adapter.downloadVideo(LOOM_URL, tempDir, (w) =>
+      console.log('  ⚠', w),
+    );
     if (!videoPath) {
       console.log('  ⚠ Could not download video — skipping frame extraction');
       return;

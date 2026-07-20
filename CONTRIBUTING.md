@@ -62,6 +62,7 @@ skills/video/     # The portable `video` agent skill (SKILL.md contract)
 - **Graceful degradation** — never throw when partial results are available. Add to `warnings[]` and return what you have.
 - **No unused exports** — knip enforces this. Run `npm run knip` to check.
 - **Two-strategy frame extraction** — yt-dlp+ffmpeg (primary) → headless Chrome (fallback). Both are optional.
+- **Never hardcode a container extension in a yt-dlp `-o`** — use `-o <name>.%(ext)s` and glob for `<name>.*`. On a DASH merge yt-dlp appends the real container, so `-o x.mp4` produces `x.mp4.webm` and any `existsSync('x.mp4')` check throws away a download that worked (issue #24).
 - **TypeScript strict mode** — no `any` unless explicitly necessary.
 
 ## Adding a New Platform Adapter
@@ -70,7 +71,23 @@ skills/video/     # The portable `video` agent skill (SKILL.md contract)
 2. Create `src/adapters/your-platform.adapter.test.ts` with unit tests
 3. Register in `src/server.ts` via `registerAdapter()`
 4. Add URL pattern detection in `src/utils/url-detector.ts`
-5. Run `npm run check` to verify everything passes
+5. If the platform downloads via yt-dlp, call `downloadViaYtDlp()` from `src/utils/ytdlp.ts` instead of spawning yt-dlp yourself — it already handles `%(ext)s` output, DASH merging, cookie retry, and `onWarning` reporting. Adapters are siblings: never import one adapter into another
+6. Run `npm run check` to verify everything passes
+
+## Before you claim it works
+
+`npm run check` never spawns yt-dlp, never downloads a video, and never installs the package — it can pass on a change that is broken for every user. Run:
+
+```bash
+npm run verify-all   # check → e2e → smoke → verify-package
+```
+
+Then report what actually ran. Listing commands you meant to run is how a PR ends up claiming coverage it doesn't have.
+
+Two habits that would have caught real bugs here:
+
+- **Prove a regression test fails without your fix.** Revert the fix locally, watch the new test go red, restore. If it stays green, it isn't a regression test. Pull the pre-fix code from git (`git show <commit>^:<path>`) rather than retyping it from memory — the shape you remember is rarely the shape that shipped.
+- **Grep for siblings before declaring a bug fixed.** The same broken pattern usually exists in more than one place.
 
 ## Updating Examples
 

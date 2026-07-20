@@ -30,6 +30,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # Without yt-dlp every download path short-circuits to "not installed",
+      # so the Loom/frame e2e tests would silently prove nothing. That blind
+      # spot is why issue #24 shipped. Runner only — the published image is
+      # unchanged.
+      # Pinned like every other dependency here (npm ci is lockfile-pinned):
+      # the tests need *a* working yt-dlp, not the newest one, and an
+      # unpinned install would run unreviewed code next to GITHUB_TOKEN.
+      - run: pipx install yt-dlp==2026.6.9
+      - run: yt-dlp --version
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e

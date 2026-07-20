@@ -116,6 +116,37 @@ describe('probeVideo', () => {
   });
 });
 
+// A DASH Loom merges to vp9/opus in a webm container, not mp4 (issue #24).
+// Returning the right filename is only half the fix — the bundled ffmpeg has
+// to actually decode it. Deterministic and offline, unlike the Loom e2e.
+describe('vp9/webm source (issue #24 merge output)', () => {
+  const tinyWebm = join(FIXTURES_DIR, 'tiny.webm');
+
+  it('probes a vp9/opus webm', async () => {
+    const probe = await probeVideo(tinyWebm);
+
+    expect(probe.videoCodec).toBe('vp9');
+    expect(probe.hasAudio).toBe(true);
+    expect(probe.audioCodec).toBe('opus');
+    expect(probe.duration).toBeGreaterThan(1);
+  });
+
+  it('extracts JPEG frames from a vp9/opus webm', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const { frames } = await extractKeyFrames(tinyWebm, tempDir, { maxFrames: 3 });
+
+      expect(frames.length).toBeGreaterThan(0);
+      for (const frame of frames) {
+        expect(existsSync(frame.filePath)).toBe(true);
+        expect(frame.mimeType).toBe('image/jpeg');
+      }
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+});
+
 describe('parseProbeFromStderr', () => {
   it('parses a stream with audio and creation_time', () => {
     const stderr = [
