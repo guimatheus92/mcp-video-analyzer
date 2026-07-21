@@ -1,7 +1,20 @@
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { FastMCP } from 'fastmcp';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  FIXTURES_DIR,
+  captureToolExecute,
+  frameCountOf,
+  generateTestClip,
+  imageCount,
+  noProgress,
+  warningsOf,
+} from '../../test/helpers/index.js';
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import type { IVideoAdapter } from '../adapters/adapter.interface.js';
+import { LocalFileAdapter } from '../adapters/local-file.adapter.js';
 import { registerGetFrames } from './get-frames.js';
 
 function createMockAdapter(overrides: Partial<IVideoAdapter> = {}): IVideoAdapter {
@@ -73,5 +86,43 @@ describe('get_frames tool', () => {
     registerAdapter(adapter);
     const metadata = await adapter.getMetadata('https://example.com/video.mp4');
     expect(metadata.duration).toBe(30);
+  });
+});
+
+// Issue #26: get_frames used to THROW when a clip filtered to zero frames,
+// discarding the accumulated warnings. It must degrade like analyze_video.
+describe('get_frames zero-frame handling (issue #26)', () => {
+  const blackClip = join(FIXTURES_DIR, 'tiny.mp4'); // pure black → filtered to empty
+  let realClip: string;
+
+  beforeAll(async () => {
+    realClip = join(mkdtempSync(join(tmpdir(), 'gf-')), 'testsrc.mp4');
+    await generateTestClip(realClip);
+  });
+
+  beforeEach(() => {
+    clearAdapters();
+    registerAdapter(new LocalFileAdapter());
+  });
+  afterEach(() => clearAdapters());
+
+  it('returns frameCount 0 with warnings instead of throwing', async () => {
+    const execute = captureToolExecute(registerGetFrames);
+    const result = await execute({ url: blackClip, options: { maxFrames: 5 } }, noProgress);
+
+    expect(frameCountOf(result)).toBe(0);
+    expect(imageCount(result)).toBe(0);
+    // The reason must survive — the old throw discarded it. tiny.mp4 IS decodable
+    // (frames extract then filter as black), so the reason must say "filtered",
+    // not "no decodable stream".
+    expect(warningsOf(result).join(' ')).toMatch(/filtered out as black/i);
+  });
+
+  it('still returns frames for content that survives filtering', async () => {
+    const execute = captureToolExecute(registerGetFrames);
+    const result = await execute({ url: realClip, options: { maxFrames: 5 } }, noProgress);
+
+    expect(frameCountOf(result)).toBeGreaterThan(0);
+    expect(imageCount(result)).toBeGreaterThan(0);
   });
 });

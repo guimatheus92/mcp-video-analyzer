@@ -1,5 +1,9 @@
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { FastMCP } from 'fastmcp';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { captureToolExecute, noProgress } from '../../test/helpers/index.js';
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import type { IVideoAdapter } from '../adapters/adapter.interface.js';
 import { registerAnalyzeMoment } from './analyze-moment.js';
@@ -130,5 +134,44 @@ describe('analyze_moment tool', () => {
     const args = { url: 'https://example.com/video.mp4', from: '0:30', to: '1:00' };
     const count = (args as { count?: number }).count ?? 10;
     expect(count).toBe(10);
+  });
+});
+
+// Issue #26 sibling: analyze_moment called extractFrameBurst with no try/catch,
+// so a corrupt clip threw a raw ffmpeg Error (leaking the command line) AND
+// discarded the transcript segment already fetched. It must degrade instead.
+describe('analyze_moment zero-frame degradation (issue #26)', () => {
+  let corruptClip: string;
+
+  beforeAll(() => {
+    corruptClip = join(mkdtempSync(join(tmpdir(), 'am-')), 'corrupt.mp4');
+    writeFileSync(corruptClip, Buffer.from('not a real video — ffmpeg will choke on this'));
+  });
+
+  beforeEach(() => clearAdapters());
+  afterEach(() => clearAdapters());
+
+  it('keeps the transcript and degrades to frameCount 0 instead of throwing', async () => {
+    // Adapter that returns a real (corrupt) path so extractFrameBurst runs and throws.
+    registerAdapter(
+      createMockAdapter({
+        canHandle: () => true,
+        downloadVideo: vi.fn().mockResolvedValue(corruptClip),
+      }),
+    );
+
+    const execute = captureToolExecute(registerAnalyzeMoment);
+    const result = await execute(
+      { url: 'https://example.com/video.mp4', from: '0:30', to: '1:00' },
+      noProgress,
+    );
+
+    const doc = JSON.parse(result.content.find((c) => c.type === 'text')?.text ?? '{}');
+    expect(doc.frameCount).toBe(0);
+    // The transcript segment — the whole reason to degrade rather than throw — survives.
+    expect(doc.transcriptSegment.length).toBeGreaterThan(0);
+    const warnings = (doc.warnings as string[]).join(' ');
+    expect(warnings).toMatch(/could not extract frames/i);
+    expect(warnings).not.toMatch(/ffmpeg|Command failed|-i |node_modules/i);
   });
 });

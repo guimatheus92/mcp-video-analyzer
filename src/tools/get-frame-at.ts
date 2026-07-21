@@ -58,67 +58,89 @@ Returns: A single image of the video frame at the specified timestamp.`,
 
       const adapter = getAdapter(url);
 
+      // Validate the timestamp up front — an invalid timestamp is a caller
+      // mistake, so it THROWS (matching analyze_moment and CLAUDE.md's rule),
+      // and validating here means neither extraction strategy re-parses it and
+      // throws a raw Error later. Only the extraction outcome degrades.
+      let seconds: number;
+      try {
+        seconds = parseTimestamp(timestamp);
+      } catch {
+        throw new UserError(
+          `Invalid timestamp "${timestamp}" — use a form like "1:23", "0:05", or "01:23:45".`,
+        );
+      }
+
       await progress(0, 'Starting frame extraction...');
 
       const tempDir = await createTempDir();
-      const downloadWarnings: string[] = [];
+      const warnings: string[] = [];
+
+      // Uniform, parseable response: both the success and the degraded (issue
+      // #26) paths emit the same JSON text block, plus any image(s).
+      const doc = (frameCount: number) => ({
+        type: 'text' as const,
+        text: JSON.stringify({ frameCount, timestamp, warnings }, null, 2),
+      });
+      const zeroFrame = (reason: string) => {
+        warnings.push(reason);
+        return { content: [doc(0)] };
+      };
 
       // Strategy 1: Download video + ffmpeg extraction
       if (adapter.capabilities.videoDownload) {
-        const videoPath = await adapter.downloadVideo(url, tempDir, (w) =>
-          downloadWarnings.push(w),
-        );
+        const videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
 
         if (videoPath) {
           await progress(50, `Extracting frame at ${timestamp}...`);
 
-          const frame = await extractFrameAt(videoPath, tempDir, timestamp);
+          // Wrap ONLY the extractor: it raises a raw ffmpeg Error (leaking the
+          // command line) on an undecodable clip. A fixed, path-free reason is
+          // surfaced instead of that message.
+          let frame;
+          try {
+            frame = await extractFrameAt(videoPath, tempDir, timestamp);
+          } catch {
+            return zeroFrame(
+              `The video could not be decoded at ${timestamp} — it may be corrupt, truncated, or in an unsupported format.`,
+            );
+          }
+
+          // An optimize failure must not discard a frame that WAS extracted —
+          // fall back to the raw frame (matching get_frames).
           const optimizedPath = getTempFilePath(tempDir, `opt_frame_at.jpg`);
-          await optimizeFrame(frame.filePath, optimizedPath);
+          const framePath = await optimizeFrame(frame.filePath, optimizedPath)
+            .then(() => optimizedPath)
+            .catch(() => frame.filePath);
 
           await progress(100, 'Frame extracted');
-
-          return {
-            content: [
-              { type: 'text' as const, text: `Frame extracted at ${timestamp}` },
-              await imageContent({ path: optimizedPath }),
-            ],
-          };
+          return { content: [doc(1), await imageContent({ path: framePath })] };
         }
       }
 
       // Strategy 2: Browser-based extraction (fallback) — not applicable to
       // local files (puppeteer.goto() can't load fs paths reliably).
       if (toLocalPath(url) !== null) {
-        throw new UserError(
+        return zeroFrame(
           'Failed to extract frame from local video. Install ffmpeg or check that the file is a valid video.',
         );
       }
 
       await progress(30, 'Extracting frame via browser fallback...');
-      const seconds = parseTimestamp(timestamp);
       const browserFrames = await extractBrowserFrames(url, tempDir, {
         timestamps: [seconds],
+      }).catch((e: unknown) => {
+        warnings.push(`Browser extraction failed: ${e instanceof Error ? e.name : 'error'}`);
+        return [];
       });
 
       if (browserFrames.length > 0) {
         await progress(100, 'Frame extracted');
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Frame extracted at ${timestamp} (via browser)`,
-            },
-            await imageContent({ path: browserFrames[0].filePath }),
-          ],
-        };
+        return { content: [doc(1), await imageContent({ path: browserFrames[0].filePath })] };
       }
 
-      throw new UserError(
-        [
-          'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
-          ...downloadWarnings,
-        ].join(' '),
+      return zeroFrame(
+        'Failed to extract frame. Install yt-dlp or Chrome/Chromium for frame extraction.',
       );
     },
   });
