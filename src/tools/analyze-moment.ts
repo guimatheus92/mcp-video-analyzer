@@ -10,6 +10,7 @@ import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource } from '../utils/url-detector.js';
+import { maxWidthParam } from './frame-options.js';
 
 const AnalyzeMomentSchema = z.object({
   url: z
@@ -36,6 +37,7 @@ const AnalyzeMomentSchema = z.object({
     .describe(
       'Tesseract OCR language codes (default: "eng+por"). Use "+" to combine: "eng+spa", "eng+fra+deu".',
     ),
+  maxWidth: maxWidthParam,
 });
 
 export function registerAnalyzeMoment(server: FastMCP): void {
@@ -64,7 +66,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
     },
     execute: async (args, { reportProgress }) => {
       const progress = createProgressReporter(reportProgress);
-      const { url, from, to } = args;
+      const { url, from, to, maxWidth } = args;
       const count = args.count ?? 10;
       const ocrLanguage = args.ocrLanguage ?? 'eng+por';
 
@@ -140,15 +142,22 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
       const optimizedPaths = await optimizeFrames(
         rawFrames.map((f) => f.filePath),
         tempDir,
+        { maxWidth },
       ).catch((e: unknown) => {
         warnings.push(`Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`);
         return rawFrames.map((f) => f.filePath);
       });
 
-      let frames = rawFrames.map((frame, i) => ({
-        ...frame,
-        filePath: optimizedPaths[i] ?? frame.filePath,
-      }));
+      // Optimized frame path -> the full-resolution frame it came from, so OCR
+      // below reads the original. Optimization is an output concern; recognizing
+      // text on the downscaled copy throws away the resolution Tesseract needs
+      // and silently drops everything on a dense UI capture.
+      const preOptimizePaths = new Map<string, string>();
+      let frames = rawFrames.map((frame, i) => {
+        const optimized = optimizedPaths[i] ?? frame.filePath;
+        if (optimized !== frame.filePath) preOptimizePaths.set(optimized, frame.filePath);
+        return { ...frame, filePath: optimized };
+      });
 
       // Dedup
       const beforeDedup = frames.length;
@@ -163,7 +172,11 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       // OCR
       await progress(75, `Running OCR on ${frames.length} frames...`);
-      const ocrResults = await extractTextFromFrames(frames, ocrLanguage, (completed, total) => {
+      const ocrSource = frames.map((frame) => {
+        const original = preOptimizePaths.get(frame.filePath);
+        return original ? { ...frame, filePath: original } : frame;
+      });
+      const ocrResults = await extractTextFromFrames(ocrSource, ocrLanguage, (completed, total) => {
         const pct = 75 + Math.round((completed / total) * 15);
         progress(pct, `OCR: processing frame ${completed}/${total}...`);
       }).catch((e: unknown) => {

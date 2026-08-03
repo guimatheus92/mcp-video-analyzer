@@ -13,6 +13,7 @@ import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
+import { maxWidthParam } from './frame-options.js';
 
 const GetFramesSchema = z.object({
   url: z
@@ -45,6 +46,7 @@ const GetFramesSchema = z.object({
         .default(false)
         .optional()
         .describe('Use dense sampling (1 frame/sec) instead of scene-change detection'),
+      maxWidth: maxWidthParam,
     })
     .optional(),
 });
@@ -132,6 +134,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
             const optimizedPaths = await optimizeFrames(
               rawFrames.map((f) => f.filePath),
               tempDir,
+              { maxWidth: options?.maxWidth },
             ).catch(() => rawFrames.map((f) => f.filePath));
 
             frames = rawFrames.map((frame, i) => ({

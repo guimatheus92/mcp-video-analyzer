@@ -1,6 +1,10 @@
+import { execFile as execFileCb } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtemp } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { promisify } from 'node:util';
 import { FastMCP } from 'fastmcp';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { captureToolExecute, noProgress } from '../../test/helpers/index.js';
@@ -173,5 +177,58 @@ describe('analyze_moment zero-frame degradation (issue #26)', () => {
     const warnings = (doc.warnings as string[]).join(' ');
     expect(warnings).toMatch(/could not extract frames/i);
     expect(warnings).not.toMatch(/ffmpeg|Command failed|-i |node_modules/i);
+  });
+});
+
+// Sibling of the analyze-core defect: frame optimization overwrote the frame
+// paths before OCR, so recognition read the downscaled copy instead of the
+// original. On a dense UI capture that costs every OCR result — measured at
+// confidence 49 against MIN_CONFIDENCE 50.
+describe('analyze_moment OCR input (real ffmpeg)', () => {
+  const execFile = promisify(execFileCb);
+  const require = createRequire(import.meta.url);
+  const ffmpegPath = require('ffmpeg-static') as string;
+  let clip: string;
+
+  beforeAll(async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'am-ocr-'));
+    clip = join(dir, 'white.mp4');
+    await execFile(ffmpegPath, [
+      '-f',
+      'lavfi',
+      '-i',
+      'color=c=white:s=160x120:d=2:r=5',
+      '-pix_fmt',
+      'yuv420p',
+      clip,
+      '-y',
+    ]);
+  });
+
+  beforeEach(() => clearAdapters());
+  afterEach(() => clearAdapters());
+
+  it('runs OCR on the original frames, not the optimized copies', async () => {
+    const ocr = await import('../processors/frame-ocr.js');
+    const spy = vi.spyOn(ocr, 'extractTextFromFrames');
+
+    registerAdapter(
+      createMockAdapter({
+        canHandle: () => true,
+        downloadVideo: vi.fn().mockResolvedValue(clip),
+      }),
+    );
+
+    const execute = captureToolExecute(registerAnalyzeMoment);
+    try {
+      await execute({ url: 'https://example.com/video.mp4', from: '0:00', to: '0:01' }, noProgress);
+
+      expect(spy).toHaveBeenCalled();
+      const ocrPaths = (spy.mock.calls[0]?.[0] ?? []).map((f) => basename(f.filePath));
+      expect(ocrPaths.length).toBeGreaterThan(0);
+      expect(ocrPaths.every((name) => !name.startsWith('opt_'))).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

@@ -2,7 +2,7 @@ import { execFile as execFileCb } from 'node:child_process';
 import { mkdtemp } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
@@ -176,6 +176,52 @@ describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
       // OCR results are a (possibly sparse) subset — never more than the frames.
       expect(result.ocrResults.length).toBeLessThanOrEqual(result.frames.length);
     } finally {
+      await cleanup();
+    }
+  });
+
+  it('runs OCR on the original frames, not the optimized copies', async () => {
+    // Regression: optimization used to overwrite the frame paths before OCR, so
+    // recognition read the 800px downscale. On a dense UI capture that yields no
+    // text, the text-aware dedup then has nothing to compare, falls back to the
+    // coarse visual hash, and a static-layout clip collapses to a single frame.
+    const ocr = await import('../processors/frame-ocr.js');
+    const spy = vi.spyOn(ocr, 'ocrFrames');
+
+    registerAdapter(
+      mockAdapter({
+        capabilities: {
+          transcript: true,
+          metadata: true,
+          comments: false,
+          chapters: false,
+          aiSummary: false,
+          videoDownload: true,
+        },
+        getTranscript: vi.fn().mockResolvedValue([]),
+        getMetadata: vi.fn().mockResolvedValue({
+          platform: 'loom',
+          title: 'White',
+          duration: 2,
+          durationFormatted: '0:02',
+          url: 'mock',
+          hasAudio: false,
+        }),
+        downloadVideo: vi.fn().mockResolvedValue(whiteClip),
+      }),
+    );
+
+    const params = resolveAnalyzeParams({ detail: 'standard', maxFrames: 4 });
+    const { result, cleanup } = await getAnalysis('https://www.loom.com/share/white2', params);
+    try {
+      expect(spy).toHaveBeenCalled();
+      const ocrPaths = (spy.mock.calls[0]?.[0] ?? []).map((f) => basename(f.filePath));
+      expect(ocrPaths.length).toBeGreaterThan(0);
+      expect(ocrPaths.every((name) => !name.startsWith('opt_'))).toBe(true);
+      // The emitted frames are still the optimized ones — only OCR reads originals.
+      expect(result.frames.every((f) => basename(f.filePath).startsWith('opt_'))).toBe(true);
+    } finally {
+      spy.mockRestore();
       await cleanup();
     }
   });

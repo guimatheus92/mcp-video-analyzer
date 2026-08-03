@@ -1,8 +1,35 @@
 import sharp from 'sharp';
+import { envInt } from '../utils/env.js';
+
+const DEFAULT_MAX_WIDTH = 800;
+const DEFAULT_QUALITY = 70;
 
 interface OptimizeOptions {
   maxWidth?: number;
   quality?: number;
+}
+
+/**
+ * Default width cap for emitted frames, in pixels. The 800 px default keeps
+ * token cost sane for the common case (talking-head clips, Reels, bug repros)
+ * where the subject is large in frame.
+ *
+ * `MCP_FRAME_MAX_WIDTH=0` (or `native`) emits frames at source resolution —
+ * needed for dense UI captures whose payload is small text. Prefer the per-call
+ * `maxWidth` tool parameter: the server starts once per session, so an
+ * environment variable cannot differ between an overview of a YouTube clip and
+ * a close read of a screen recording.
+ */
+function configuredMaxWidth(): number {
+  const raw = process.env.MCP_FRAME_MAX_WIDTH?.trim();
+  if (raw && /^(native|full|original)$/i.test(raw)) return 0;
+  return envInt(raw, DEFAULT_MAX_WIDTH);
+}
+
+/** JPEG quality for emitted frames; raise it when thin glyphs matter. */
+function configuredQuality(): number {
+  const quality = envInt(process.env.MCP_FRAME_JPEG_QUALITY, DEFAULT_QUALITY);
+  return quality >= 1 && quality <= 100 ? quality : DEFAULT_QUALITY;
 }
 
 export async function optimizeFrame(
@@ -10,13 +37,14 @@ export async function optimizeFrame(
   outputPath: string,
   options: OptimizeOptions = {},
 ): Promise<string> {
-  const maxWidth = options.maxWidth ?? 800;
-  const quality = options.quality ?? 70;
+  const maxWidth = options.maxWidth ?? configuredMaxWidth();
+  const quality = options.quality ?? configuredQuality();
 
-  await sharp(inputPath)
-    .resize({ width: maxWidth, withoutEnlargement: true })
-    .jpeg({ quality })
-    .toFile(outputPath);
+  let pipeline = sharp(inputPath);
+  if (maxWidth > 0) {
+    pipeline = pipeline.resize({ width: maxWidth, withoutEnlargement: true });
+  }
+  await pipeline.jpeg({ quality }).toFile(outputPath);
 
   return outputPath;
 }

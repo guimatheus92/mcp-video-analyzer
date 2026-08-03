@@ -8,6 +8,7 @@ import { optimizeFrame } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir, getTempFilePath } from '../utils/temp-files.js';
 import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
+import { maxWidthParam } from './frame-options.js';
 
 const GetFrameAtSchema = z.object({
   url: z
@@ -27,6 +28,7 @@ const GetFrameAtSchema = z.object({
     .default(false)
     .optional()
     .describe('Return frame as base64 inline instead of file path'),
+  maxWidth: maxWidthParam,
 });
 
 export function registerGetFrameAt(server: FastMCP): void {
@@ -54,7 +56,7 @@ Returns: A single image of the video frame at the specified timestamp.`,
     },
     execute: async (args, { reportProgress }) => {
       const progress = createProgressReporter(reportProgress);
-      const { url, timestamp } = args;
+      const { url, timestamp, maxWidth } = args;
 
       const adapter = getAdapter(url);
 
@@ -109,7 +111,7 @@ Returns: A single image of the video frame at the specified timestamp.`,
           // An optimize failure must not discard a frame that WAS extracted —
           // fall back to the raw frame (matching get_frames).
           const optimizedPath = getTempFilePath(tempDir, `opt_frame_at.jpg`);
-          const framePath = await optimizeFrame(frame.filePath, optimizedPath)
+          const framePath = await optimizeFrame(frame.filePath, optimizedPath, { maxWidth })
             .then(() => optimizedPath)
             .catch(() => frame.filePath);
 

@@ -71,7 +71,8 @@ For anything touching adapters or downloads, also exercise it in a container —
 ## Environment Variables
 
 - **Transcription:** `WHISPER_MODEL`, `WHISPER_LANGUAGE`, `WHISPER_PROMPT` (glossary → `--initial_prompt`), `WHISPER_BIN`, `WHISPER_DEVICE`/`WHISPER_COMPUTE`/`WHISPER_BEAM_SIZE`/`WHISPER_WORD_TIMESTAMPS` (env-gated — only passed to the CLI when set, so `openai-whisper` isn't broken by `whisper-ctranslate2`-only flags), `WHISPER_HF_MODEL` (opt-in), `OPENAI_API_KEY`.
-- **OCR:** `MCP_OCR_PREPROCESS` (default on; `0` to disable preprocessing).
+- **OCR:** `MCP_OCR_PREPROCESS` (default on; `0` to disable preprocessing). OCR always reads the pre-optimization frame — recognition needs the pixels the emitted copy gives up.
+- **Frame size:** `MCP_FRAME_MAX_WIDTH` (default `800`; `0`/`native` keeps source resolution) and `MCP_FRAME_JPEG_QUALITY` (default `70`). Both are defaults only — the per-call `maxWidth` tool parameter wins, and is the right knob for dense UI captures since the server starts once per session.
 - **yt-dlp cookies:** `YTDLP_COOKIES` (Netscape cookie file, wins when both set) / `YTDLP_COOKIES_FROM_BROWSER` (e.g. `chrome`, `edge`) — needed for Instagram and age-restricted videos. Browser extraction requires the browser to be closed on Windows.
 - **Sidecars:** `MCP_WRITE_SIDECARS` (default off; `1` to persist resumable sidecars next to local videos).
 - **TwelveLabs:** `TWELVELABS_API_KEY` (opt-in Pegasus transcript/summary for direct URLs).

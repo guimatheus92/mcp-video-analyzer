@@ -28,6 +28,7 @@ import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { toLocalPath } from '../utils/url-detector.js';
+import { maxWidthParam } from './frame-options.js';
 
 /** Shared analysis cache (used by both analyze_video and analyze_videos). */
 const cache = new AnalysisCache();
@@ -66,6 +67,7 @@ export const AnalyzeOptionsSchema = z
       .boolean()
       .optional()
       .describe('Skip frame extraction (transcript + metadata only)'),
+    maxWidth: maxWidthParam,
     detail: z
       .enum(['brief', 'standard', 'detailed'])
       .optional()
@@ -116,6 +118,8 @@ export interface AnalyzeParams {
   maxFrames: number | undefined;
   threshold: number;
   skipFrames: boolean;
+  /** `undefined` = fall back to MCP_FRAME_MAX_WIDTH, then the 800 px default. */
+  maxWidth: number | undefined;
   ocrLanguage: string;
   forceRefresh: boolean;
   transcribe: TranscribeOptions;
@@ -134,6 +138,7 @@ export function resolveAnalyzeParams(options: AnalyzeOptions): AnalyzeParams {
     maxFrames: options?.maxFrames,
     threshold: options?.threshold ?? 0.1,
     skipFrames: options?.skipFrames ?? !config.includeFrames,
+    maxWidth: options?.maxWidth,
     ocrLanguage: options?.ocrLanguage ?? 'eng+por',
     forceRefresh: options?.forceRefresh ?? false,
     transcribe: {
@@ -238,6 +243,14 @@ async function runAnalysisPipeline(
       tempDir = await createTempDir();
       let framesExtracted = false;
 
+      // Optimized frame path -> the full-resolution frame it came from. OCR reads
+      // the original: optimization is an *output* concern (token cost), and
+      // running recognition on the downscaled copy needlessly throws away the
+      // resolution Tesseract needs. It also used to cascade — unreadable frames
+      // yield no text, text-aware dedup degrades to the coarse visual hash, and
+      // a static-layout capture collapses to a single frame.
+      const preOptimizePaths = new Map<string, string>();
+
       // Strategy 1: download (no-op for local files) + ffmpeg frame extraction
       // with scene→uniform-sampling fallback for static clips.
       if (adapter.capabilities.videoDownload) {
@@ -266,6 +279,7 @@ async function runAnalysisPipeline(
             const optimizedPaths = await optimizeFrames(
               rawFrames.map((f) => f.filePath),
               tempDir,
+              { maxWidth: params.maxWidth },
             ).catch((e: unknown) => {
               warnings.push(
                 `Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`,
@@ -273,10 +287,11 @@ async function runAnalysisPipeline(
               return rawFrames.map((f) => f.filePath);
             });
 
-            result.frames = rawFrames.map((frame, i) => ({
-              ...frame,
-              filePath: optimizedPaths[i] ?? frame.filePath,
-            }));
+            result.frames = rawFrames.map((frame, i) => {
+              const optimized = optimizedPaths[i] ?? frame.filePath;
+              if (optimized !== frame.filePath) preOptimizePaths.set(optimized, frame.filePath);
+              return { ...frame, filePath: optimized };
+            });
             framesExtracted = true;
           }
         }
@@ -337,7 +352,11 @@ async function runAnalysisPipeline(
           // on-screen text (static-background Reels/Stories) survive instead of
           // being collapsed by a coarse perceptual hash.
           await progress(82, `Running OCR on ${result.frames.length} frames...`);
-          const perFrame = await ocrFrames(result.frames, ocrLanguage, (completed, total) => {
+          const ocrSource = result.frames.map((frame) => {
+            const original = preOptimizePaths.get(frame.filePath);
+            return original ? { ...frame, filePath: original } : frame;
+          });
+          const perFrame = await ocrFrames(ocrSource, ocrLanguage, (completed, total) => {
             const pct = 82 + Math.round((completed / total) * 9);
             void progress(pct, `OCR: processing frame ${completed}/${total}...`);
           }).catch((e: unknown): IOcrResult[] => {

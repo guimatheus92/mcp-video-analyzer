@@ -8,6 +8,7 @@ import { optimizeFrames } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
+import { maxWidthParam } from './frame-options.js';
 
 const GetFrameBurstSchema = z.object({
   url: z
@@ -33,6 +34,7 @@ const GetFrameBurstSchema = z.object({
     .default(false)
     .optional()
     .describe('Return frames as base64 inline instead of file paths'),
+  maxWidth: maxWidthParam,
 });
 
 export function registerGetFrameBurst(server: FastMCP): void {
@@ -66,7 +68,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
     },
     execute: async (args, { reportProgress }) => {
       const progress = createProgressReporter(reportProgress);
-      const { url, from, to, count } = args;
+      const { url, from, to, count, maxWidth } = args;
       const frameCount = count ?? 5;
 
       const adapter = getAdapter(url);
@@ -140,6 +142,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
           const optimizedPaths = await optimizeFrames(
             frames.map((f) => f.filePath),
             tempDir,
+            { maxWidth },
           ).catch(() => frames.map((f) => f.filePath));
 
           await progress(100, 'Burst extraction complete');
