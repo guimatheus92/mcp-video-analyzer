@@ -171,6 +171,27 @@ function resultDefiningParams(params: AnalyzeParams): ResultDefiningParams {
   };
 }
 
+// Classification guard for the cache/sidecar key (the #28 review bug,
+// mechanized): every leaf of AnalyzeParams must be either result-defining
+// (a key of ResultDefiningParams) or named below as a deliberate exclusion.
+// Adding a param without deciding which fails `npm run typecheck` with the
+// field name in the error — instead of silently serving stale cached results,
+// which is what an unkeyed `maxWidth` did until review caught it.
+type ExcludedFromCacheKey =
+  | 'forceRefresh' // cache directive — deciding whether to READ the cache, never part of the key
+  // TODO(#29): skipFrames DOES change the result (a frameless analysis is
+  // cached under the same key as a framed one) — pre-existing sibling of the
+  // #28 maxWidth bug, excluded here until that issue lands the key change.
+  | 'skipFrames';
+type ParamLeaves = Exclude<keyof AnalyzeParams, 'transcribe'> | keyof TranscribeOptions;
+type MustBeNever<T extends never> = T;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _EveryParamClassified = MustBeNever<
+  Exclude<ParamLeaves, keyof ResultDefiningParams | ExcludedFromCacheKey>
+>;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+type _NoStrayKeyField = MustBeNever<Exclude<keyof ResultDefiningParams, ParamLeaves>>;
+
 export type ProgressReporter = (progress: number, message?: string) => Promise<void>;
 
 const noopProgress: ProgressReporter = async () => undefined;

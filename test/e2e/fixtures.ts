@@ -10,6 +10,14 @@ import { FIXTURES_DIR } from '../helpers/fixtures.js';
 export const TEST_LOOM_URL =
   process.env['LOOM_TEST_URL'] ?? 'https://www.loom.com/share/bdebdfe44b294225ac718bad241a94fe';
 
+/**
+ * A word known to appear in the DEFAULT `TEST_LOOM_URL` transcript ("Hi, I'm
+ * Josh Owens co-founder of boost." — see examples/loom-demo/full-analysis.json).
+ * MUST be updated together with the URL above. Content checks against it are
+ * skipped when `LOOM_TEST_URL` overrides the video.
+ */
+export const TEST_LOOM_KNOWN_WORD = 'boost';
+
 export const TEST_DIRECT_VIDEO_URL = 'https://www.w3schools.com/html/mov_bbb.mp4';
 
 /** Absolute path to the bundled `tiny.mp4` fixture for local-file tests. */

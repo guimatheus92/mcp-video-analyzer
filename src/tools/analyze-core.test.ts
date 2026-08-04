@@ -9,8 +9,9 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import type { IVideoAdapter } from '../adapters/adapter.interface.js';
 import type { IAdapterCapabilities, IAnalysisResult, IVideoMetadata } from '../types.js';
+import type { ResultDefiningParams } from '../utils/analysis-sidecar.js';
 import { getAnalysis, resolveAnalyzeParams } from './analyze-core.js';
-import type { AnalysisHandle } from './analyze-core.js';
+import type { AnalysisHandle, AnalyzeOptions } from './analyze-core.js';
 
 function mockAdapter(overrides: Partial<IVideoAdapter> = {}): IVideoAdapter {
   const capabilities: IAdapterCapabilities = {
@@ -118,6 +119,66 @@ describe('getAnalysis caching', () => {
   });
 });
 
+describe('cache key covers every result-defining param', () => {
+  beforeEach(() => {
+    clearAdapters();
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+  });
+  afterEach(() => {
+    clearAdapters();
+    vi.unstubAllEnvs();
+  });
+
+  // One row per ResultDefiningParams field; the `satisfies` forces this table
+  // to grow whenever the interface grows. Each row proves its field actually
+  // misses the cache — the exact defect review caught in #28, where maxWidth
+  // changed the emitted frames but hashed to the same key. The compile-time
+  // sibling of this table is the ExcludedFromCacheKey guard in analyze-core.ts.
+  //
+  // Base options keep skipFrames: true so every row stays on the fast
+  // frameless path (no ffmpeg, no browser fallback).
+  const variants = {
+    detail: { detail: 'detailed' },
+    maxFrames: { maxFrames: 7 },
+    threshold: { threshold: 0.5 },
+    maxWidth: { maxWidth: 1920 },
+    ocrLanguage: { ocrLanguage: 'deu' },
+    model: { model: 'medium' },
+    language: { language: 'pt' },
+    initialPrompt: { initialPrompt: 'Smiles glossary' },
+  } satisfies Record<keyof ResultDefiningParams, NonNullable<AnalyzeOptions>>;
+
+  it.each(Object.entries(variants))(
+    'a repeat call differing only in %s misses the cache',
+    async (field, delta) => {
+      const adapter = mockAdapter();
+      registerAdapter(adapter);
+      const url = `https://www.loom.com/share/key-${field}`;
+
+      await (await getAnalysis(url, resolveAnalyzeParams({ skipFrames: true }))).cleanup();
+      await (
+        await getAnalysis(url, resolveAnalyzeParams({ skipFrames: true, ...delta }))
+      ).cleanup();
+
+      // A miss re-runs the pipeline; a hit would leave this at 1 (the bug).
+      expect(adapter.getMetadata).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('maxWidth equal to the 800px default still HITS (keyedFrameMaxWidth normalization)', async () => {
+    const adapter = mockAdapter();
+    registerAdapter(adapter);
+    const url = 'https://www.loom.com/share/key-default-width';
+
+    await (await getAnalysis(url, resolveAnalyzeParams({ skipFrames: true }))).cleanup();
+    await (
+      await getAnalysis(url, resolveAnalyzeParams({ skipFrames: true, maxWidth: 800 }))
+    ).cleanup();
+
+    expect(adapter.getMetadata).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
   const execFile = promisify(execFileCb);
   const require = createRequire(import.meta.url);
@@ -180,7 +241,7 @@ describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
     } finally {
       await cleanup();
     }
-  });
+  }, 20_000);
 
   it('re-runs on a changed maxWidth instead of serving the cached frames', async () => {
     // maxWidth changes the emitted images, so it must key the cache and the
@@ -246,7 +307,9 @@ describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
     await repeat.cleanup();
     expect(adapter.downloadVideo).toHaveBeenCalledTimes(2);
     vi.unstubAllEnvs();
-  });
+    // Three full real-ffmpeg pipeline runs; the 5s default is one scheduler
+    // hiccup away from a flake on a loaded machine.
+  }, 20_000);
 
   it('runs OCR on the original frames, not the optimized copies', async () => {
     // Regression: optimization used to overwrite the frame paths before OCR, so
@@ -292,7 +355,7 @@ describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
       spy.mockRestore();
       await cleanup();
     }
-  });
+  }, 20_000);
 });
 
 describe('resolveAnalyzeParams', () => {

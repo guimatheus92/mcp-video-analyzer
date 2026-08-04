@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIXTURES_DIR } from '../../test/helpers/index.js';
+import { FIXTURES_DIR, SCENE_CUT_TIMES, sceneCutClip } from '../../test/helpers/index.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import {
   extractDenseFrames,
@@ -321,4 +321,33 @@ describe('extractKeyFrames', () => {
       await cleanupTempDir(tempDir);
     }
   });
+});
+
+describe('extractKeyFrames on a clip with known scene cuts (golden fixture)', () => {
+  // Every other frame-count assertion in this suite only bounds against
+  // duration; this one pins scene detection to ground truth: three solid-color
+  // segments with hard cuts at exactly SCENE_CUT_TIMES.
+  it('finds each cut via scene detection, not the uniform-sampling fallback', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const clip = await sceneCutClip();
+      const { frames, warnings } = await extractKeyFrames(clip, tempDir, { maxFrames: 10 });
+
+      // Positive assertion that the scene path actually ran — if detection
+      // found nothing and fell back to uniform sampling, cut coverage below
+      // would pass by accident.
+      expect(warnings.some((w) => w.includes('uniform temporal sampling'))).toBe(false);
+
+      expect(frames.length).toBeGreaterThanOrEqual(SCENE_CUT_TIMES.length);
+      const times = frames.map((f) => parseTimestamp(f.time));
+      for (const cut of SCENE_CUT_TIMES) {
+        // frame.time has M:SS granularity, so allow 1s of rounding.
+        expect(times.some((t) => Math.abs(t - cut) <= 1)).toBe(true);
+      }
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+    // Golden-clip generation + real scene detection: two ffmpeg spawns, so the
+    // 5s default flakes on a loaded machine.
+  }, 20_000);
 });

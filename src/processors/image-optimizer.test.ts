@@ -10,6 +10,7 @@ import {
   optimizeFrame,
   optimizeFrames,
   optimizeFramesKeepingOriginals,
+  preprocessForOcr,
 } from './image-optimizer.js';
 
 // The width cap and JPEG quality are read from the environment at call time, so
@@ -316,6 +317,41 @@ describe('optimizeFrames', () => {
         expect(metadata.format).toBe('jpeg');
         expect(metadata.width).toBeLessThanOrEqual(800);
       }
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+});
+
+describe('preprocessForOcr', () => {
+  // Structural coverage for the actual OCR input path (grayscale + 2x upscale
+  // + normalize + sharpen) — it had zero tests before this block. The
+  // recognition-quality outcome lives in test/e2e/golden-ocr.e2e.test.ts.
+  it('doubles the width and emits PNG', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const inputPath = await createTestImage(tempDir, 'ocr-in.png', { width: 400, height: 300 });
+      const outputPath = join(tempDir, 'ocr-out.png');
+
+      await preprocessForOcr(inputPath, outputPath);
+
+      const metadata = await sharp(outputPath).metadata();
+      expect(metadata.width).toBe(800);
+      expect(metadata.format).toBe('png');
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('caps the upscale at 3000px', async () => {
+    const tempDir = await createTempDir();
+    try {
+      const inputPath = await createTestImage(tempDir, 'wide-in.png', { width: 1920, height: 200 });
+      const outputPath = join(tempDir, 'wide-out.png');
+
+      await preprocessForOcr(inputPath, outputPath);
+
+      expect((await sharp(outputPath).metadata()).width).toBe(3000);
     } finally {
       await cleanupTempDir(tempDir);
     }

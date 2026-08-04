@@ -8,7 +8,7 @@ import {
 import { LoomAdapter } from '../../src/adapters/loom.adapter.js';
 import { getAnalysis, resolveAnalyzeParams } from '../../src/tools/analyze-core.js';
 import { cleanupTempDir, createTempDir } from '../../src/utils/temp-files.js';
-import { TEST_LOOM_URL, isVideoUnavailable } from './fixtures.js';
+import { TEST_LOOM_KNOWN_WORD, TEST_LOOM_URL, isVideoUnavailable } from './fixtures.js';
 
 describe('E2E: Loom video analysis', () => {
   beforeAll(() => {
@@ -36,16 +36,26 @@ describe('E2E: Loom video analysis', () => {
     expect(metadata.url).toBe(TEST_LOOM_URL);
   });
 
-  it('fetches transcript entries', async () => {
+  it('fetches transcript entries with the known content', async () => {
     const adapter = getAdapter(TEST_LOOM_URL);
     const transcript = await adapter.getTranscript(TEST_LOOM_URL);
 
-    expect(Array.isArray(transcript)).toBe(true);
-    // Most Loom videos have transcripts, but some may not
-    if (transcript.length > 0) {
-      expect(transcript[0]).toHaveProperty('time');
-      expect(transcript[0]).toHaveProperty('text');
-      expect(transcript[0].text.length).toBeGreaterThan(0);
+    // The old `if (transcript.length > 0)` guard is the inverted-assertion
+    // pattern from issue #24: the default video HAS a transcript, so an empty
+    // result is a failure, not a variant to tolerate.
+    expect(transcript.length).toBeGreaterThan(0);
+    expect(transcript[0]).toHaveProperty('time');
+    expect(transcript[0]).toHaveProperty('text');
+
+    if (!process.env['LOOM_TEST_URL']) {
+      // Ground-truth content check, not just shape. Skipped only under an
+      // explicit operator override of the video URL — different video,
+      // different words.
+      const joined = transcript
+        .map((e) => e.text)
+        .join(' ')
+        .toLowerCase();
+      expect(joined).toContain(TEST_LOOM_KNOWN_WORD);
     }
   });
 

@@ -104,12 +104,21 @@ export function generateTestClip(path: string, seconds = 3, size = '320x240'): P
   ]);
 }
 
-function runFfmpeg(args: string[]): Promise<void> {
+/**
+ * Run the bundled ffmpeg, failing LOUD with the stderr tail. Golden-clip
+ * generation depends on drawtext/freetype being compiled in — if it ever
+ * isn't, the test must fail with ffmpeg's own error, never silently skip.
+ */
+export function runFfmpeg(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, args, { stdio: 'ignore' });
+    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    proc.stderr.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
     proc.on('error', reject);
     proc.on('close', (code) =>
-      code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}`)),
+      code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-400)}`)),
     );
   });
 }

@@ -43,6 +43,21 @@ jobs:
       - run: npm run build
       - run: npm run test:e2e
 
+  # test:smoke builds and boots the real MCP server + CLI — the closest thing
+  # to "does it start for an end user" that runs in seconds. It was manual-only
+  # until the #28 post-mortem; anything that cheap belongs on every PR.
+  smoke:
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test:smoke
+
   # Replicates what Glama CI does on every release: build the Dockerfile from
   # a fresh clone (dist/ is gitignored — the image must compile itself) and
   # prove the container actually works. See CLAUDE.md → Publishing.
