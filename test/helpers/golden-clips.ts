@@ -18,10 +18,14 @@ import { runFfmpeg } from './tools.js';
  *
  * Rendering uses the TTF shipped in `test/fixtures/fonts/` (OFL license) with
  * an explicit `fontfile=` — one known font keeps OCR-confidence floors stable
- * across Windows dev machines and ubuntu CI, and needs only libfreetype
- * (compiled into ffmpeg-static), not system font discovery. If drawtext is
- * ever missing, ffmpeg exits non-zero and the test FAILS with ffmpeg's error;
- * there is no silent-skip path.
+ * across Windows dev machines and ubuntu CI, without system font discovery.
+ * drawtext needs libfreetype, which the ffmpeg-static WINDOWS build compiles
+ * in but the LINUX build does not ("No such filter: 'drawtext'") — so the CI
+ * e2e job installs the distro ffmpeg and points `GOLDEN_FFMPEG` at it for
+ * CLIP GENERATION ONLY; everything the production code runs still uses the
+ * bundled binary. If drawtext is missing wherever generation runs, ffmpeg
+ * exits non-zero and the test FAILS with ffmpeg's error; there is no
+ * silent-skip path.
  *
  * Ground-truth strings stay within [A-Z0-9 ] so drawtext needs no escaping.
  */
@@ -88,7 +92,12 @@ async function cachedClip(name: string, args: string[]) {
 
   await mkdir(GOLDEN_DIR, { recursive: true });
   const tmpPath = join(GOLDEN_DIR, `${name}-${recipeHash}.${process.pid}.tmp.mp4`);
-  await runFfmpeg([...args, tmpPath]);
+  // GOLDEN_FFMPEG: generation-only override for environments whose bundled
+  // ffmpeg lacks drawtext (the ffmpeg-static linux build — see file header).
+  // The binary is not part of the cache key: CI tmpdirs are ephemeral, and a
+  // dev machine only ever uses one binary, so cross-binary staleness can't
+  // occur in practice.
+  await runFfmpeg([...args, tmpPath], process.env.GOLDEN_FFMPEG || undefined);
   try {
     await rename(tmpPath, finalPath);
   } catch (e) {

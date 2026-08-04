@@ -105,13 +105,14 @@ export function generateTestClip(path: string, seconds = 3, size = '320x240'): P
 }
 
 /**
- * Run the bundled ffmpeg, failing LOUD with the stderr tail. Golden-clip
- * generation depends on drawtext/freetype being compiled in — if it ever
- * isn't, the test must fail with ffmpeg's own error, never silently skip.
+ * Run ffmpeg (the bundled binary unless `bin` overrides it), failing LOUD
+ * with the stderr tail. Golden-clip generation depends on drawtext/freetype
+ * being compiled in — if it isn't, the test must fail with ffmpeg's own
+ * error ("No such filter: 'drawtext'"), never silently skip.
  */
-export function runFfmpeg(args: string[]): Promise<void> {
+export function runFfmpeg(args: string[], bin: string = ffmpegPath): Promise<void> {
   return new Promise((resolve, reject) => {
-    const proc = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] });
+    const proc = spawn(bin, args, { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     proc.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString();

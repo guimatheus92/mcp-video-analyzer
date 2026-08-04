@@ -39,9 +39,16 @@ jobs:
       # unpinned install would run unreviewed code next to GITHUB_TOKEN.
       - run: pipx install yt-dlp==2026.6.9
       - run: yt-dlp --version
+      # The ffmpeg-static LINUX build has no drawtext filter (no libfreetype),
+      # so the golden text clips can't render with it. The distro ffmpeg is
+      # used for CLIP GENERATION ONLY via GOLDEN_FFMPEG — every production
+      # code path under test still runs the bundled binary.
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e
+        env:
+          GOLDEN_FFMPEG: ffmpeg
 
   # test:smoke builds and boots the real MCP server + CLI — the closest thing
   # to "does it start for an end user" that runs in seconds. It was manual-only
