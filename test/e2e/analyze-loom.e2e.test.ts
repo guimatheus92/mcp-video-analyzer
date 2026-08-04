@@ -25,9 +25,15 @@ describe('E2E: Loom video analysis', () => {
     expect(adapter.name).toBe('loom');
   });
 
-  it('fetches metadata with title and duration', async () => {
+  it('fetches metadata with title and duration', async (ctx) => {
     const adapter = getAdapter(TEST_LOOM_URL);
-    const metadata = await adapter.getMetadata(TEST_LOOM_URL);
+    const metadata = await adapter.getMetadata(TEST_LOOM_URL).catch((e: unknown) => {
+      // Only a positive "the video is gone" signal excuses this third-party
+      // dependency (same carve-out as the download tests below); any other
+      // error stays loud.
+      if (isVideoUnavailable(String(e))) ctx.skip(`TEST_LOOM_URL is unavailable: ${String(e)}`);
+      throw e;
+    });
 
     expect(metadata.platform).toBe('loom');
     expect(metadata.title).toBeTruthy();
@@ -36,9 +42,15 @@ describe('E2E: Loom video analysis', () => {
     expect(metadata.url).toBe(TEST_LOOM_URL);
   });
 
-  it('fetches transcript entries with the known content', async () => {
+  it('fetches transcript entries with the known content', async (ctx) => {
     const adapter = getAdapter(TEST_LOOM_URL);
-    const transcript = await adapter.getTranscript(TEST_LOOM_URL);
+    const transcript = await adapter.getTranscript(TEST_LOOM_URL).catch((e: unknown) => {
+      // A vanished third-party video must SKIP (positive evidence only, per
+      // fixtures.ts isVideoUnavailable), not fail the PR-gating e2e job; a
+      // pipeline error still fails loud.
+      if (isVideoUnavailable(String(e))) ctx.skip(`TEST_LOOM_URL is unavailable: ${String(e)}`);
+      throw e;
+    });
 
     // The old `if (transcript.length > 0)` guard is the inverted-assertion
     // pattern from issue #24: the default video HAS a transcript, so an empty

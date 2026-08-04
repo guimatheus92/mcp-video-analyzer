@@ -183,6 +183,10 @@ type ExcludedFromCacheKey =
   // cached under the same key as a framed one) — pre-existing sibling of the
   // #28 maxWidth bug, excluded here until that issue lands the key change.
   | 'skipFrames';
+// Flattening is manual and BY NAME: `transcribe` is the only nested object
+// today. A new nested param object (e.g. `frameOptions: {...}`) must be
+// flattened here the same way, or it counts as a single leaf and its
+// sub-fields slip past the per-leaf classification below.
 type ParamLeaves = Exclude<keyof AnalyzeParams, 'transcribe'> | keyof TranscribeOptions;
 type MustBeNever<T extends never> = T;
 // eslint-disable-next-line @typescript-eslint/no-unused-vars

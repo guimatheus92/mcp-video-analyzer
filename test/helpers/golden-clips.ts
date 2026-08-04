@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -25,8 +26,12 @@ import { runFfmpeg } from './tools.js';
  * Ground-truth strings stay within [A-Z0-9 ] so drawtext needs no escaping.
  */
 
-// Bump when changing any clip recipe — invalidates the cross-run cache.
-const GOLDEN_DIR = join(tmpdir(), 'mcp-video-analyzer', 'test-golden-v1');
+// Cached clips are keyed by a hash of their full ffmpeg argv (which embeds
+// every recipe input: filters, ground-truth strings, font path, sizes,
+// durations), so ANY recipe edit self-invalidates — no manual version bump
+// for a human to forget, the same hand-maintained-invariant hazard the
+// cache-key guard in analyze-core.ts exists to eliminate.
+const GOLDEN_DIR = join(tmpdir(), 'mcp-video-analyzer', 'test-golden');
 
 /** Static header line, present on every dense-UI frame. */
 export const DENSE_UI_HEADER = 'ORDERS DASHBOARD 2026';
@@ -66,17 +71,24 @@ function textLine(
 }
 
 /**
- * Generate-once-per-run cache, safe under vitest `pool: 'forks'`: workers race
- * to generate, each writes to a pid-unique temp name, first rename wins and
- * losers discard their copy.
+ * Generate-at-most-once cache, persisted ACROSS runs (the `existsSync`
+ * short-circuit): the cache file name carries a hash of the ffmpeg argv, so a
+ * recipe change lands on a new path and regenerates while an unchanged recipe
+ * reuses the previous run's clip. Safe under vitest `pool: 'forks'`: workers
+ * race to generate, each writes to a pid-unique temp name, first rename wins
+ * and losers discard their copy.
+ *
+ * `args` is the full ffmpeg argv MINUS the output path (appended here) —
+ * anything that influences the rendered clip must flow through it.
  */
-async function cachedClip(name: string, generate: (outPath: string) => Promise<void>) {
-  const finalPath = join(GOLDEN_DIR, `${name}.mp4`);
+async function cachedClip(name: string, args: string[]) {
+  const recipeHash = createHash('sha256').update(JSON.stringify(args)).digest('hex').slice(0, 8);
+  const finalPath = join(GOLDEN_DIR, `${name}-${recipeHash}.mp4`);
   if (existsSync(finalPath)) return finalPath;
 
   await mkdir(GOLDEN_DIR, { recursive: true });
-  const tmpPath = join(GOLDEN_DIR, `${name}.${process.pid}.tmp.mp4`);
-  await generate(tmpPath);
+  const tmpPath = join(GOLDEN_DIR, `${name}-${recipeHash}.${process.pid}.tmp.mp4`);
+  await runFfmpeg([...args, tmpPath]);
   try {
     await rename(tmpPath, finalPath);
   } catch (e) {
@@ -101,24 +113,24 @@ export function denseUiClip(): Promise<string> {
     textLine(DENSE_UI_HEADER, 40),
     textLine('CPU 42 MEM 71 NET 208', 70, { color: '0xaaaaaa' }),
     textLine('REGION US EAST 1 PROD', 100, { color: '0x9cdcfe' }),
+    // Half-open windows: `between` is inclusive on both ends, so at t=i two
+    // states would co-draw at the same y and any sample landing exactly on an
+    // integer second would only ever see that state garbled.
     ...DENSE_UI_STATES.map((state, i) =>
-      textLine(state, 160, { enable: `between(t,${i},${i + 1})` }),
+      textLine(state, 160, { enable: `gte(t,${i})*lt(t,${i + 1})` }),
     ),
   ].join(',');
-  return cachedClip('dense-ui', (out) =>
-    runFfmpeg([
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      `color=c=0x1e2430:s=1920x1080:d=${DENSE_UI_STATES.length}:r=5`,
-      '-vf',
-      filters,
-      '-pix_fmt',
-      'yuv420p',
-      out,
-    ]),
-  );
+  return cachedClip('dense-ui', [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=0x1e2430:s=1920x1080:d=${DENSE_UI_STATES.length}:r=5`,
+    '-vf',
+    filters,
+    '-pix_fmt',
+    'yuv420p',
+  ]);
 }
 
 /**
@@ -128,23 +140,21 @@ export function denseUiClip(): Promise<string> {
  * downscale regression specifically.
  */
 export function bigTextClip(): Promise<string> {
+  // Half-open windows for the same boundary reason as denseUiClip.
   const filters = BIG_TEXT_LINES.map((line, i) =>
-    textLine(line, 300, { size: 96, enable: `between(t,${i * 2},${i * 2 + 2})` }),
+    textLine(line, 300, { size: 96, enable: `gte(t,${i * 2})*lt(t,${i * 2 + 2})` }),
   ).join(',');
-  return cachedClip('big-text', (out) =>
-    runFfmpeg([
-      '-y',
-      '-f',
-      'lavfi',
-      '-i',
-      `color=c=0x1e2430:s=1280x720:d=${BIG_TEXT_LINES.length * 2}:r=5`,
-      '-vf',
-      filters,
-      '-pix_fmt',
-      'yuv420p',
-      out,
-    ]),
-  );
+  return cachedClip('big-text', [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=0x1e2430:s=1280x720:d=${BIG_TEXT_LINES.length * 2}:r=5`,
+    '-vf',
+    filters,
+    '-pix_fmt',
+    'yuv420p',
+  ]);
 }
 
 /**
@@ -154,17 +164,14 @@ export function bigTextClip(): Promise<string> {
  */
 export function sceneCutClip(): Promise<string> {
   const seg = (color: string) => `color=c=${color}:s=320x240:d=2:r=10`;
-  return cachedClip('scene-cut', (out) =>
-    runFfmpeg([
-      '-y',
-      ...['red', 'blue', 'green'].flatMap((c) => ['-f', 'lavfi', '-i', seg(c)]),
-      '-filter_complex',
-      '[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]',
-      '-map',
-      '[v]',
-      '-pix_fmt',
-      'yuv420p',
-      out,
-    ]),
-  );
+  return cachedClip('scene-cut', [
+    '-y',
+    ...['red', 'blue', 'green'].flatMap((c) => ['-f', 'lavfi', '-i', seg(c)]),
+    '-filter_complex',
+    '[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]',
+    '-map',
+    '[v]',
+    '-pix_fmt',
+    'yuv420p',
+  ]);
 }

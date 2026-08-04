@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAdapters, registerAdapter } from '../../src/adapters/adapter.interface.js';
 import { LocalFileAdapter } from '../../src/adapters/local-file.adapter.js';
 import { extractFrameAt } from '../../src/processors/frame-extractor.js';
@@ -41,6 +41,22 @@ describe('E2E: OCR outcome on golden clips (real tesseract)', () => {
     clearAdapters();
   });
 
+  beforeEach(() => {
+    // Ambient env would neutralize or invert these guards: an exported
+    // MCP_FRAME_MAX_WIDTH=native emits source-res frames, making the dense-UI
+    // test pass even on pre-#28 code (a guard that cannot fail), while
+    // MCP_OCR_PREPROCESS=0 or a low MCP_FRAME_JPEG_QUALITY false-fails
+    // correct code near the confidence floor. Same hazard the
+    // width-dependent unit suites already stub against.
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+    vi.stubEnv('MCP_FRAME_JPEG_QUALITY', '');
+    vi.stubEnv('MCP_OCR_PREPROCESS', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   // The #28 outcome guard. Pre-fix code OCR'd the 800px downscale: 15px text
   // dropped below Tesseract's resolution, every result fell under
   // MIN_CONFIDENCE, text-aware dedup degraded to the visual hash and the
@@ -72,11 +88,13 @@ describe('E2E: OCR outcome on golden clips (real tesseract)', () => {
     }
   });
 
-  // Diagnostic control for the test above — 96px text OCRs fine even through
-  // the 800px downscale, so this PASSES on pre-#28 code. Dense-UI red +
-  // big-text red = OCR stack broken; dense-UI red + big-text green = the
-  // downscale regression specifically.
-  it('recovers big text through the default 800px emitted frames (control)', async () => {
+  // Diagnostic control for the test above — 96px text is readable at ANY
+  // width, so this passes regardless of which frames OCR reads: on pre-#28
+  // code recognition ran on the 800px emitted copies (that asymmetry is the
+  // RED proof), on current code it runs on the source-res originals.
+  // Dense-UI red + big-text red = OCR stack broken; dense-UI red + big-text
+  // green = the downscale regression specifically.
+  it('recovers big text regardless of emitted-frame width (control)', async () => {
     const params = resolveAnalyzeParams({ detail: 'standard', forceRefresh: true });
     const { result, cleanup } = await getAnalysis(await bigTextClip(), params);
     try {
@@ -108,7 +126,7 @@ describe('E2E: OCR outcome on golden clips (real tesseract)', () => {
       expect(norm(ocr.text)).toContain(norm(DENSE_UI_HEADER));
       expect(ocr.confidence).toBeGreaterThan(50);
     } finally {
-      vi.unstubAllEnvs();
+      // Env restore happens in afterEach; only the temp dir is ours to clean.
       await cleanupTempDir(tempDir);
     }
   });
