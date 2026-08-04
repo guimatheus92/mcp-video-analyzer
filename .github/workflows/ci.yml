@@ -3,10 +3,23 @@ name: CI
 on:
   pull_request:
     branches: [main]
+  # A direct push to main previously ran NOTHING — a broken main could sit
+  # unnoticed until the next PR happened to open.
+  push:
+    branches: [main]
 
+# A force-push or rapid PR update shouldn't queue stale runs behind fresh
+# ones. Never cancel main's own runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# timeout-minutes on every job: the e2e vitest config allows 420s per test, so
+# a wedged download could otherwise burn the runner's 6-hour default.
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,6 +37,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     needs: check
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,6 +70,14 @@ jobs:
         with:
           path: ~/.cache/huggingface
           key: whisper-ct2-tiny-0.5.7
+      # tesseract.js fetches eng.traineddata (~15MB) into the OS tmpdir on
+      # first OCR (frame-ocr.ts cachePath); cache it. Bump the key if the
+      # tessdata language/source ever changes. Golden clips are deliberately
+      # NOT cached — regeneration costs seconds.
+      - uses: actions/cache@v4
+        with:
+          path: /tmp/mcp-video-analyzer/tessdata
+          key: tessdata-eng-v1
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e
@@ -71,6 +93,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     needs: check
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -80,11 +103,48 @@ jobs:
       - run: npm ci
       - run: npm run test:smoke
 
+  # verify-all's fourth leg: pack the tarball, install it in a temp dir, boot
+  # the installed server — the only check that catches packaging breakage
+  # (files list, bin wiring) before `npm publish` does. It was local-only.
+  verify-package:
+    runs-on: ubuntu-latest
+    needs: check
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run verify-package
+
+  # Windows is a first-class dev platform here (vitest pool:'forks' is
+  # REQUIRED on Windows; golden-clips.ts carries Windows-specific drawtext
+  # path escaping) yet nothing exercised it in CI. Unit tests only — the
+  # bundled ffmpeg-static WINDOWS build has drawtext, so golden-clip
+  # generation needs no GOLDEN_FFMPEG. The e2e suite stays ubuntu-only:
+  # running it twice would double the network-flake surface and minutes for
+  # little extra signal.
+  unit-windows:
+    runs-on: windows-latest
+    needs: check
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run test
+
   # Replicates what Glama CI does on every release: build the Dockerfile from
   # a fresh clone (dist/ is gitignored — the image must compile itself) and
   # prove the container actually works. See CLAUDE.md → Publishing.
   docker-image:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Build image from clean clone
