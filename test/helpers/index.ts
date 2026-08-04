@@ -5,9 +5,12 @@ export {
   DENSE_UI_HEADER,
   DENSE_UI_STATES,
   SCENE_CUT_TIMES,
+  SPEECH_WAV,
+  SPEECH_WORDS,
   bigTextClip,
   denseUiClip,
   sceneCutClip,
+  speechClip,
 } from './golden-clips.js';
 export {
   captureToolExecute,

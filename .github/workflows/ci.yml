@@ -44,11 +44,26 @@ jobs:
       # used for CLIP GENERATION ONLY via GOLDEN_FFMPEG — every production
       # code path under test still runs the bundled binary.
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      # Whisper CLI for the WHISPER_E2E transcription outcome test (issue #30).
+      # whisper-ctranslate2 is the drop-in ctranslate2 CLI (no torch — installs
+      # in seconds); pinned for the same reason yt-dlp is. The transcriber's
+      # candidate list is [WHISPER_BIN, 'whisper'], hence WHISPER_BIN below.
+      - run: pipx install whisper-ctranslate2==0.5.7
+      - run: whisper-ctranslate2 --version
+      # faster-whisper fetches the CT2 model from HuggingFace on first use
+      # (~75MB for tiny); cache it across runs.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-ct2-tiny-0.5.7
       - run: npm ci
       - run: npm run build
       - run: npm run test:e2e
         env:
           GOLDEN_FFMPEG: ffmpeg
+          WHISPER_E2E: '1'
+          WHISPER_BIN: whisper-ctranslate2
+          WHISPER_MODEL: tiny
 
   # test:smoke builds and boots the real MCP server + CLI — the closest thing
   # to "does it start for an end user" that runs in seconds. It was manual-only

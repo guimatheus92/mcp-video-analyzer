@@ -41,6 +41,11 @@ npm run test:e2e          # E2E tests (requires network + yt-dlp/Chrome)
 
 Tests live next to their source files: `foo.ts` → `foo.test.ts`.
 
+Two e2e opt-ins/quirks:
+
+- `WHISPER_E2E=1 npm run test:e2e` also runs the transcription outcome test (needs a whisper CLI — `pip install -U openai-whisper` or `pipx install whisper-ctranslate2` + `WHISPER_BIN=whisper-ctranslate2`). With the flag set and no whisper installed the test **fails** by design; CI always runs it.
+- On Linux, golden text clips need a drawtext-capable ffmpeg: `GOLDEN_FFMPEG=ffmpeg npm run test:e2e` (distro ffmpeg; the bundled `ffmpeg-static` Linux build lacks drawtext). Windows/macOS need nothing.
+
 ## Project Structure
 
 ```

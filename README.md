@@ -481,8 +481,15 @@ npm run check
 # Build
 npm run build
 
-# Run E2E tests (requires network)
+# Run E2E tests (requires network; add WHISPER_E2E=1 to include the
+# transcription outcome test — needs a whisper CLI installed)
 npm run test:e2e
+
+# Build + boot the real MCP server/CLI (seconds)
+npm run test:smoke
+
+# Everything: check → e2e → smoke → verify-package
+npm run verify-all
 
 # Open MCP Inspector for manual testing
 npm run inspect

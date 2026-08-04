@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { mkdir, rename, rm } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FIXTURES_DIR } from './fixtures.js';
@@ -50,6 +50,25 @@ export const DENSE_UI_STATES = [
 export const BIG_TEXT_LINES = ['BIG CONTROL ONE', 'BIG CONTROL TWO'];
 /** Hard-cut timestamps (seconds) of the scene-cut clip. */
 export const SCENE_CUT_TIMES = [2, 4];
+
+/**
+ * Ground truth for the committed speech fixture `test/fixtures/speech.wav`
+ * (issue #30 — the transcript half of the "empty = FAIL" convention).
+ *
+ * Provenance: generated once with Windows TTS (System.Speech, voice
+ * "Microsoft Zira Desktop", Rate -1) at 16kHz/16-bit/mono — the exact format
+ * extractAudioTrack() produces — speaking:
+ *
+ *   "The quick brown fox jumps over the lazy dog."
+ *
+ * 3.63s, mean_volume -20.6dB (safely above the -55dB silence gate). Verified
+ * at generation time: whisper `tiny` transcribes it verbatim. "jumps" is
+ * deliberately absent from the word list — tense drift ("jumped") is the one
+ * plausible ASR wobble on this sentence.
+ */
+export const SPEECH_WORDS = ['quick', 'brown', 'fox', 'lazy', 'dog'];
+/** Absolute path to the committed speech WAV. */
+export const SPEECH_WAV = join(FIXTURES_DIR, 'speech.wav');
 
 // drawtext filter-option values: '\' -> '/' and 'C:' -> 'C\:' (the drive colon
 // would otherwise read as a filter-option separator on Windows).
@@ -182,5 +201,36 @@ export function sceneCutClip(): Promise<string> {
     '[v]',
     '-pix_fmt',
     'yuv420p',
+  ]);
+}
+
+/**
+ * The committed speech WAV muxed under a solid-color video — a "video with
+ * known speech" for full-pipeline transcript outcome tests (getAnalysis →
+ * extractAudioTrack → whisper). No drawtext, so it renders with any ffmpeg.
+ */
+export async function speechClip(): Promise<string> {
+  // The argv only carries the WAV's *path*; hash its content in so a
+  // regenerated speech.wav self-invalidates the cached mux like every other
+  // recipe input.
+  const wavHash = createHash('sha256')
+    .update(await readFile(SPEECH_WAV))
+    .digest('hex')
+    .slice(0, 8);
+  return cachedClip('speech', [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    'color=c=0x1e2430:s=320x240:d=4:r=5',
+    '-i',
+    SPEECH_WAV,
+    '-c:a',
+    'aac',
+    '-shortest',
+    '-pix_fmt',
+    'yuv420p',
+    '-metadata',
+    `comment=speech-${wavHash}`,
   ]);
 }
