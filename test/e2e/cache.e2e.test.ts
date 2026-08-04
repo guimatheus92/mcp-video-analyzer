@@ -1,3 +1,5 @@
+import { copyFile, readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAdapters, registerAdapter } from '../../src/adapters/adapter.interface.js';
 import { LocalFileAdapter } from '../../src/adapters/local-file.adapter.js';
@@ -5,6 +7,7 @@ import { getAnalysis, resolveAnalyzeParams } from '../../src/tools/analyze-core.
 import type { IAnalysisResult } from '../../src/types.js';
 import { AnalysisCache, cacheKey } from '../../src/utils/cache.js';
 import { filterAnalysisResult } from '../../src/utils/field-filter.js';
+import { cleanupTempDir, createTempDir } from '../../src/utils/temp-files.js';
 import { sceneCutClip } from '../helpers/index.js';
 
 function createResult(title = 'Test'): IAnalysisResult {
@@ -154,6 +157,43 @@ describe('E2E: skipFrames keys the analysis cache (issue #29, real ffmpeg)', () 
       expect(framed.result.frames.length).toBeGreaterThan(0);
     } finally {
       await framed.cleanup();
+    }
+  });
+
+  // Pins the `|| undefined` normalization in resultDefiningParams(), which no
+  // other test reaches through the real pipeline: a framed run must persist a
+  // sidecar whose params OMIT skipFrames (the canonical framed shape), and an
+  // explicit skipFrames: false call must key identically to an omitted one.
+  // Dropping `|| undefined` puts `"skipFrames":false` in the persisted params
+  // and fails the shape assertion.
+  it('persists the canonical framed shape and keys explicit skipFrames:false identically', async () => {
+    vi.stubEnv('MCP_WRITE_SIDECARS', '1');
+    const tempDir = await createTempDir('key-shape-');
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(await sceneCutClip(), clip);
+
+      clearAdapters();
+      const adapter = new LocalFileAdapter();
+      const getMetadata = vi.spyOn(adapter, 'getMetadata');
+      registerAdapter(adapter);
+
+      const framed = await getAnalysis(clip, resolveAnalyzeParams({ forceRefresh: true }));
+      try {
+        expect(framed.result.frames.length).toBeGreaterThan(0);
+      } finally {
+        await framed.cleanup();
+      }
+
+      const persisted = JSON.parse(await readFile(join(tempDir, 'clip.analysis.json'), 'utf8'));
+      expect(persisted.params).not.toHaveProperty('skipFrames');
+
+      // Explicit false ≡ omitted: same key, so this is served from cache.
+      const explicit = await getAnalysis(clip, resolveAnalyzeParams({ skipFrames: false }));
+      await explicit.cleanup();
+      expect(getMetadata).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupTempDir(tempDir);
     }
   });
 });

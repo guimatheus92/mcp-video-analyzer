@@ -21,7 +21,11 @@ import { toLocalPath } from './url-detector.js';
  *                             so the images survive temp-dir cleanup.
  */
 
-const SIDECAR_VERSION = 1;
+// v2: skipFrames joined the params key (#29). v1 sidecars written by a
+// frameless run hold frames: [] under the SAME key shape a framed read now
+// produces (skipFrames was unkeyed), so they must be recomputed once rather
+// than silently answering framed reads with zero frames.
+const SIDECAR_VERSION = 2;
 
 /**
  * The result-defining inputs that key both the in-memory cache and the on-disk
@@ -41,9 +45,10 @@ export interface ResultDefiningParams {
    */
   maxWidth?: number;
   /**
-   * `true` = frameless analysis (issue #29). Absent = frames included, which
-   * is also what every sidecar written before this field existed holds — so
-   * those stay valid instead of being invalidated for no change in output.
+   * `true` = frameless analysis (issue #29). Absent = frames included:
+   * explicit `false` is normalized away so a framed call has one canonical
+   * key. Pre-#29 sidecars never carried this entry regardless of frame
+   * content — SIDECAR_VERSION 2 is what retires them, not this key.
    */
   skipFrames?: true;
   ocrLanguage: string;

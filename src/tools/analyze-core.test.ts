@@ -135,10 +135,12 @@ describe('cache key covers every result-defining param', () => {
   // changed the emitted frames but hashed to the same key. The compile-time
   // sibling of this table is the ExcludedFromCacheKey guard in analyze-core.ts.
   //
-  // Base options keep skipFrames: true and the mock metadata reports
-  // duration 0, so every row stays off the real frame path (no ffmpeg, no
-  // puppeteer browser fallback) — including the skipFrames: false row, whose
-  // second call would otherwise launch a real browser against the fake URL.
+  // Base options keep skipFrames: true so rows stay on the frameless path.
+  // The skipFrames: false row does enter the frame path: ffmpeg (strategy 1)
+  // is off because mockAdapter's videoDownload capability is false, and the
+  // puppeteer browser fallback (strategy 2, gated on duration > 0) is off
+  // because the mock metadata reports duration 0 — without that, this row
+  // would launch a real browser against the fake URL.
   const variants = {
     detail: { detail: 'detailed' },
     maxFrames: { maxFrames: 7 },

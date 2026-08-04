@@ -164,8 +164,9 @@ function resultDefiningParams(params: AnalyzeParams): ResultDefiningParams {
     // not answer a later `maxWidth: 0` call, and a sidecar written under one
     // MCP_FRAME_MAX_WIDTH must not be reused after that variable changes.
     maxWidth: keyedFrameMaxWidth(params.maxWidth),
-    // `|| undefined` drops `false` from the JSON key, so every sidecar and
-    // cache entry written before this field existed (all framed) stays valid.
+    // `|| undefined` drops `false` from the JSON key: explicit false and
+    // omitted mean the same framed result, so they must share one canonical
+    // key (and one persisted sidecar shape — pinned in cache.e2e.test.ts).
     skipFrames: params.skipFrames || undefined,
     ocrLanguage: params.ocrLanguage,
     model: params.transcribe.model,
@@ -187,11 +188,9 @@ type ExcludedFromCacheKey = 'forceRefresh'; // cache directive — deciding whet
 // sub-fields slip past the per-leaf classification below.
 type ParamLeaves = Exclude<keyof AnalyzeParams, 'transcribe'> | keyof TranscribeOptions;
 type MustBeNever<T extends never> = T;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _EveryParamClassified = MustBeNever<
   Exclude<ParamLeaves, keyof ResultDefiningParams | ExcludedFromCacheKey>
 >;
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 type _NoStrayKeyField = MustBeNever<Exclude<keyof ResultDefiningParams, ParamLeaves>>;
 
 export type ProgressReporter = (progress: number, message?: string) => Promise<void>;

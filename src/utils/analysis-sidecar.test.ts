@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { appendFile, copyFile, rm, writeFile } from 'node:fs/promises';
+import { appendFile, copyFile, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FIXTURES_DIR, createTestImage } from '../../test/helpers/index.js';
@@ -232,10 +232,11 @@ describe('sidecar write/read', () => {
     }
   });
 
-  it('keys on skipFrames but keeps pre-#29 sidecars valid for framed reads', async () => {
-    // skipFrames: true is present in the key; false resolves to an absent key
-    // (`|| undefined` in resultDefiningParams), byte-identical to every sidecar
-    // written before the field existed — all of which hold frames.
+  it('keys on skipFrames; the canonical framed shape (no entry) answers framed reads', async () => {
+    // skipFrames: true is present in the key; false resolves to an absent
+    // entry (`|| undefined` in resultDefiningParams), so all framed calls
+    // share one canonical shape. Pre-#29 sidecars also lack the entry but are
+    // retired wholesale by SIDECAR_VERSION 2 (see the poisoned-sidecar test).
     const tempDir = await createTempDir();
     try {
       const clip = join(tempDir, 'clip.mp4');
@@ -256,6 +257,36 @@ describe('sidecar write/read', () => {
       );
       expect(await readAnalysisSidecar(clip, PARAMS)).toBeNull();
       expect(await readAnalysisSidecar(clip, { ...PARAMS, skipFrames: true })).not.toBeNull();
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('rejects a poisoned pre-#29 (version 1) frameless sidecar on a framed read', async () => {
+    // The upgrade hazard PR #34 review caught: pre-fix code never keyed
+    // skipFrames, so a frameless run under ≤0.7.1 with MCP_WRITE_SIDECARS=1
+    // persisted frames: [] under params WITHOUT a skipFrames entry — the very
+    // shape a post-fix framed read (false → absent key) produces. Only the
+    // version gate can invalidate those retroactively; this reconstructs that
+    // exact on-disk shape (real writer output, version forced to 1) and
+    // demands a recompute instead of a zero-frame disk hit.
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+      await writeAnalysisSidecars(
+        clip,
+        { ...fakeResult(frame), frames: [] },
+        PARAMS, // pre-fix frameless key: no skipFrames entry
+        { transcriptFromWhisper: true },
+      );
+      const jsonPath = join(tempDir, 'clip.analysis.json');
+      const persisted = JSON.parse(await readFile(jsonPath, 'utf8'));
+      persisted.version = 1;
+      await writeFile(jsonPath, JSON.stringify(persisted));
+
+      expect(await readAnalysisSidecar(clip, PARAMS)).toBeNull();
     } finally {
       await cleanupTempDir(tempDir);
     }
