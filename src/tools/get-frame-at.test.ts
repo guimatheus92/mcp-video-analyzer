@@ -8,6 +8,7 @@ import {
   frameCountOf,
   generateTestClip,
   imageCount,
+  imageWidths,
   noProgress,
   warningsOf,
 } from '../../test/helpers/index.js';
@@ -120,6 +121,24 @@ describe('get_frame_at zero-frame handling (issue #26)', () => {
     await expect(execute({ url: realClip, timestamp: 'not-a-time' }, noProgress)).rejects.toThrow(
       UserError,
     );
+  });
+
+  it('honours the per-call maxWidth on the emitted frame', async () => {
+    // get_frame_at optimizes a single frame through `optimizeFrame` — its own
+    // wiring (`args.maxWidth` + an explicit output path), so it needs its own
+    // proof that the caller's width reaches the image.
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+    const wideClip = join(dir, 'wide.mp4');
+    await generateTestClip(wideClip, 2, '1280x720');
+    const execute = captureToolExecute(registerGetFrameAt);
+
+    const capped = await execute({ url: wideClip, timestamp: '0:01', maxWidth: 100 }, noProgress);
+    expect(await imageWidths(capped)).toEqual([100]);
+
+    // 1280, not the 800 a dropped parameter would produce.
+    const native = await execute({ url: wideClip, timestamp: '0:01', maxWidth: 0 }, noProgress);
+    expect(await imageWidths(native)).toEqual([1280]);
+    vi.unstubAllEnvs();
   });
 
   it('degrades on the remote browser-fallback path, keeping the download warning', async () => {

@@ -2,12 +2,13 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FastMCP, UserError } from 'fastmcp';
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   captureToolExecute,
   frameCountOf,
   generateTestClip,
   imageCount,
+  imageWidths,
   noProgress,
   warningsOf,
 } from '../../test/helpers/index.js';
@@ -103,5 +104,43 @@ describe('get_frame_burst zero-frame handling (issue #26)', () => {
     await expect(
       execute({ url: realClip, from: 'nope', to: '0:02', count: 3 }, noProgress),
     ).rejects.toThrow(UserError);
+  });
+});
+
+// get_frame_burst reads the width from `args.maxWidth` — a different shape from
+// get_frames' nested `options`. Dropping it degrades to the 800px default with a
+// green suite, so assert against the decoded image.
+describe('get_frame_burst honours the per-call maxWidth', () => {
+  let wideClip: string; // 1280px wide — wider than the 800px default cap
+
+  beforeAll(async () => {
+    wideClip = join(mkdtempSync(join(tmpdir(), 'gfb-w-')), 'wide.mp4');
+    await generateTestClip(wideClip, 2, '1280x720');
+  });
+
+  beforeEach(() => {
+    clearAdapters();
+    registerAdapter(new LocalFileAdapter());
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+  });
+  afterEach(() => {
+    clearAdapters();
+    vi.unstubAllEnvs();
+  });
+
+  it('caps the burst frames at the requested width, and keeps source at 0', async () => {
+    const execute = captureToolExecute(registerGetFrameBurst);
+
+    const capped = await execute(
+      { url: wideClip, from: '0:00', to: '0:01', count: 2, maxWidth: 100 },
+      noProgress,
+    );
+    expect(await imageWidths(capped)).toEqual([100, 100]);
+
+    const native = await execute(
+      { url: wideClip, from: '0:00', to: '0:01', count: 2, maxWidth: 0 },
+      noProgress,
+    );
+    expect(await imageWidths(native)).toEqual([1280, 1280]);
   });
 });

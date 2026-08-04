@@ -5,6 +5,7 @@ export {
   frameCountOf,
   generateTestClip,
   imageCount,
+  imageWidths,
   noProgress,
   warningsOf,
 } from './tools.js';

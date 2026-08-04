@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import type { FastMCP } from 'fastmcp';
+import sharp from 'sharp';
 
 const require = createRequire(import.meta.url);
 const ffmpegPath = require('ffmpeg-static') as string;
@@ -8,6 +9,8 @@ const ffmpegPath = require('ffmpeg-static') as string;
 interface ToolContent {
   type: string;
   text?: string;
+  /** base64 payload of an `image` part. */
+  data?: string;
 }
 interface ToolResult {
   content: ToolContent[];
@@ -34,6 +37,25 @@ export function warningsOf(result: ToolResult): string[] {
 /** Number of image content parts in a tool result. */
 export function imageCount(result: ToolResult): number {
   return result.content.filter((c) => c.type === 'image').length;
+}
+
+/**
+ * Decoded pixel widths of the image parts in a tool result.
+ *
+ * The only way to prove a per-call `maxWidth` reached the emitted frame: each
+ * tool wires it from a different argument shape (`options?.maxWidth`,
+ * `args.maxWidth`, `params.maxWidth`), and a dropped option silently falls back
+ * to the 800 px default instead of erroring — so it compiles and the rest of
+ * the suite stays green.
+ */
+export async function imageWidths(result: ToolResult): Promise<number[]> {
+  const widths: number[] = [];
+  for (const part of result.content) {
+    if (part.type !== 'image' || part.data === undefined) continue;
+    const meta = await sharp(Buffer.from(part.data, 'base64')).metadata();
+    widths.push(meta.width ?? 0);
+  }
+  return widths;
 }
 
 /**
@@ -64,14 +86,18 @@ export const noProgress = {
  * A solid `testsrc` clip (moving pattern, NOT black) that survives black-frame
  * filtering — the "real content still works" control. `tiny.mp4` can't serve
  * this: it's a pure-black clip whose frames are all filtered out.
+ *
+ * `size` matters for width assertions: pick something wider than the 800 px
+ * default cap so "capped at the default" and "source resolution" are
+ * distinguishable outcomes.
  */
-export function generateTestClip(path: string, seconds = 3): Promise<void> {
+export function generateTestClip(path: string, seconds = 3, size = '320x240'): Promise<void> {
   return runFfmpeg([
     '-y',
     '-f',
     'lavfi',
     '-i',
-    `testsrc=size=320x240:rate=10:duration=${seconds}`,
+    `testsrc=size=${size}:rate=10:duration=${seconds}`,
     '-pix_fmt',
     'yuv420p',
     path,

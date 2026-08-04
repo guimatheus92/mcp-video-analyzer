@@ -26,6 +26,10 @@ absolute path in the JSON. Partial failures degrade into the "warnings" array
 Options:
   --detail <level>        brief | standard | detailed (default: standard)
   --max-frames <n>        Max key frames to extract (1-60; default adapts to duration)
+  --max-width <px>        Width cap for emitted frames (default: 800, or
+                          MCP_FRAME_MAX_WIDTH). 0 keeps the source resolution —
+                          use it for screen recordings whose meaning lives in
+                          small text (terminals, dashboards, IDEs)
   --fields <list>         Output filter — comma-separated subset of: metadata,
                           transcript,frames,comments,chapters,ocrResults,
                           timeline,aiSummary. Filters the emitted JSON only;
@@ -58,6 +62,7 @@ export function parseCliArgs(argv: string[]): CliInvocation {
     options: {
       detail: { type: 'string' },
       'max-frames': { type: 'string' },
+      'max-width': { type: 'string' },
       fields: { type: 'string' },
       'force-refresh': { type: 'boolean' },
       'ocr-language': { type: 'string' },
@@ -71,6 +76,7 @@ export function parseCliArgs(argv: string[]): CliInvocation {
   const raw: Record<string, unknown> = {};
   if (values.detail !== undefined) raw.detail = values.detail;
   if (values['max-frames'] !== undefined) raw.maxFrames = Number(values['max-frames']);
+  if (values['max-width'] !== undefined) raw.maxWidth = Number(values['max-width']);
   if (values.fields !== undefined) {
     raw.fields = values.fields
       .split(',')

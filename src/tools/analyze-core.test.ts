@@ -4,11 +4,13 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { promisify } from 'node:util';
+import sharp from 'sharp';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import type { IVideoAdapter } from '../adapters/adapter.interface.js';
-import type { IAdapterCapabilities, IVideoMetadata } from '../types.js';
+import type { IAdapterCapabilities, IAnalysisResult, IVideoMetadata } from '../types.js';
 import { getAnalysis, resolveAnalyzeParams } from './analyze-core.js';
+import type { AnalysisHandle } from './analyze-core.js';
 
 function mockAdapter(overrides: Partial<IVideoAdapter> = {}): IVideoAdapter {
   const capabilities: IAdapterCapabilities = {
@@ -178,6 +180,72 @@ describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
     } finally {
       await cleanup();
     }
+  });
+
+  it('re-runs on a changed maxWidth instead of serving the cached frames', async () => {
+    // maxWidth changes the emitted images, so it must key the cache and the
+    // sidecar like maxFrames does. It didn't: the second call — the "analyze for
+    // an overview, then re-analyze the same URL at native resolution for a close
+    // read" workflow this parameter exists for — hit the 10-minute cache and got
+    // the FIRST call's downscaled frames back, silently.
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+    const adapter = mockAdapter({
+      capabilities: {
+        transcript: true,
+        metadata: true,
+        comments: false,
+        chapters: false,
+        aiSummary: false,
+        videoDownload: true,
+      },
+      getTranscript: vi.fn().mockResolvedValue([]),
+      getMetadata: vi.fn().mockResolvedValue({
+        platform: 'loom',
+        title: 'White',
+        duration: 2,
+        durationFormatted: '0:02',
+        url: 'mock',
+        hasAudio: false,
+      }),
+      downloadVideo: vi.fn().mockResolvedValue(whiteClip),
+    });
+    registerAdapter(adapter);
+
+    const url = 'https://www.loom.com/share/width-key';
+    const analyzeAt = (maxWidth: number): Promise<AnalysisHandle> =>
+      getAnalysis(url, resolveAnalyzeParams({ detail: 'standard', maxFrames: 2, maxWidth }));
+    const widthsOf = (result: IAnalysisResult): Promise<number[]> =>
+      Promise.all(result.frames.map(async (f) => (await sharp(f.filePath).metadata()).width ?? 0));
+
+    const first = await analyzeAt(100);
+    const capped = await widthsOf(first.result);
+    await first.cleanup();
+
+    const second = await analyzeAt(0);
+    // Assert the re-run BEFORE reading the images: when the key is shared this
+    // is a cache hit whose frames point into the temp dir the first call already
+    // cleaned up, and a missing-file error would obscure the actual defect.
+    expect(adapter.downloadVideo).toHaveBeenCalledTimes(2);
+    const native = await widthsOf(second.result);
+    await second.cleanup();
+
+    expect(capped.length).toBeGreaterThan(0);
+    expect(capped.every((w) => w === 100)).toBe(true);
+    // The clip is 160px wide: 160 here proves the second call re-ran the
+    // pipeline rather than replaying the 100px result.
+    expect(native.every((w) => w === 160)).toBe(true);
+
+    // ...and the key still caches: repeating a width already analyzed must NOT
+    // re-run, or "cache miss" would just be "cache broken". (Measured by the
+    // adapter call count, not by the frames — a cache hit hands back paths into
+    // the temp dir the first call already cleaned up.)
+    const repeat = await getAnalysis(
+      url,
+      resolveAnalyzeParams({ detail: 'standard', maxFrames: 2, maxWidth: 0 }),
+    );
+    await repeat.cleanup();
+    expect(adapter.downloadVideo).toHaveBeenCalledTimes(2);
+    vi.unstubAllEnvs();
   });
 
   it('runs OCR on the original frames, not the optimized copies', async () => {

@@ -21,6 +21,8 @@ describe('parseCliArgs', () => {
       'brief',
       '--max-frames',
       '10',
+      '--max-width',
+      '0',
       '--fields',
       'metadata, transcript',
       '--force-refresh',
@@ -40,6 +42,8 @@ describe('parseCliArgs', () => {
     expect(parsed.options).toEqual({
       detail: 'brief',
       maxFrames: 10,
+      // 0 = source resolution; it must survive as 0, not be dropped as falsy.
+      maxWidth: 0,
       fields: ['metadata', 'transcript'],
       forceRefresh: true,
       ocrLanguage: 'eng',
@@ -65,6 +69,14 @@ describe('parseCliArgs', () => {
 
   it('rejects an out-of-range --max-frames', () => {
     expect(() => parseCliArgs(['url', '--max-frames', '999'])).toThrow();
+  });
+
+  it('rejects a non-numeric or out-of-range --max-width', () => {
+    // The width flag validates through the same shared schema as the tools —
+    // no hand-rolled range checks in the CLI.
+    expect(() => parseCliArgs(['url', '--max-width', 'wide'])).toThrow();
+    expect(() => parseCliArgs(['url', '--max-width', '99999'])).toThrow();
+    expect(() => parseCliArgs(['url', '--max-width', '800.5'])).toThrow();
   });
 
   it('rejects an invalid --detail level', () => {

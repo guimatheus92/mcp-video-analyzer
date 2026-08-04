@@ -118,6 +118,7 @@ stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `ti
 |------|-------------|
 | `--detail <level>` | `brief` (metadata + transcript, no frames), `standard` (default), `detailed` |
 | `--max-frames <n>` | Max key frames, 1–60 (default adapts to duration) |
+| `--max-width <px>` | Width cap for emitted frames (default `800`, or `MCP_FRAME_MAX_WIDTH`); `0` keeps the source resolution — see [Frame size](#frame-size-dense-ui-captures) |
 | `--fields <list>` | Output filter — comma-separated subset: `metadata,transcript,frames,comments,chapters,ocrResults,timeline,aiSummary`. Filters the emitted JSON only; use `--detail brief` to actually skip download/frame extraction |
 | `--force-refresh` | Bypass the cache and re-analyze |
 | `--ocr-language <codes>` | Tesseract languages (default `eng+por`) |
@@ -416,16 +417,18 @@ get_frame_at(url, "2:14", { maxWidth: 1920 })
 analyze_video(url, { detail: "standard", maxWidth: 1568 })
 ```
 
-Supported on `analyze_video`, `analyze_videos`, `analyze_moment`, `get_frames`, `get_frame_at` and `get_frame_burst`.
+Supported on `analyze_video`, `analyze_videos`, `analyze_moment`, `get_frames`, `get_frame_at` and `get_frame_burst`, and on the CLI as `--max-width <px>`.
 
 Native frames cost several times more context than the default, so raise the cap deliberately — `get_frames` returns up to 20 frames and `analyze_video` at `detailed` up to 60.
 
 | Variable | Applies to | Default | Notes |
 |---|---|---|---|
-| `MCP_FRAME_MAX_WIDTH` | Emitted frame width, in px | `800` | `0` (or `native`) disables the cap. A per-call `maxWidth` wins over it |
-| `MCP_FRAME_JPEG_QUALITY` | Emitted frame JPEG quality | `70` | Raise it when thin glyphs matter; values outside 1–100 fall back |
+| `MCP_FRAME_MAX_WIDTH` | Emitted frame width, in px | `800` | `0` (or `native`/`full`/`original`) disables the cap. A per-call `maxWidth` wins over it |
+| `MCP_FRAME_JPEG_QUALITY` | Emitted frame JPEG quality | `70` | Raise it when thin glyphs matter; env only, there is no per-call quality parameter. Values outside 1–100 fall back |
 
-Prefer the per-call parameter: the server starts once per session, so an environment variable cannot differ between an overview of a YouTube clip and a close read of a screen recording.
+A value either variable can't use — `1e3`, `1920px`, a quality of `150` — is rejected with a one-time warning on stderr and the default applies. It is not silently accepted: the whole point of the setting is to escape a downscale that otherwise looks like a normal result.
+
+Prefer the per-call parameter: the server starts once per session, so an environment variable cannot differ between an overview of a YouTube clip and a close read of a screen recording. The width a call actually uses is part of the cache and sidecar key, so analyzing the same video at 800 px and then at `maxWidth: 0` re-runs the pipeline instead of returning the first result twice.
 
 ## Complementary Tools
 

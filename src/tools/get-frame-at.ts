@@ -113,7 +113,14 @@ Returns: A single image of the video frame at the specified timestamp.`,
           const optimizedPath = getTempFilePath(tempDir, `opt_frame_at.jpg`);
           const framePath = await optimizeFrame(frame.filePath, optimizedPath, { maxWidth })
             .then(() => optimizedPath)
-            .catch(() => frame.filePath);
+            .catch((e: unknown) => {
+              // Degraded but reported — a sharp/disk failure here means the
+              // emitted frame ignores `maxWidth` and the caller should know.
+              warnings.push(
+                `Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`,
+              );
+              return frame.filePath;
+            });
 
           await progress(100, 'Frame extracted');
           return { content: [doc(1), await imageContent({ path: framePath })] };

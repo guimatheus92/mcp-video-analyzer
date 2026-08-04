@@ -34,6 +34,12 @@ export interface ResultDefiningParams {
   /** Absent = duration-adaptive default (resolved at runtime, not part of the key). */
   maxFrames?: number;
   threshold: number;
+  /**
+   * Effective width cap of the emitted frames. Absent = the 800 px default,
+   * which is also what every sidecar written before this field existed holds —
+   * so those stay valid instead of being invalidated for no change in output.
+   */
+  maxWidth?: number;
   ocrLanguage: string;
   model?: string;
   language?: string;

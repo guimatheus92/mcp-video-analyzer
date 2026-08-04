@@ -6,7 +6,7 @@ import { buildAnnotatedTimeline } from '../processors/annotated-timeline.js';
 import { deduplicateFrames } from '../processors/frame-dedup.js';
 import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor.js';
 import { extractTextFromFrames } from '../processors/frame-ocr.js';
-import { optimizeFrames } from '../processors/image-optimizer.js';
+import { ocrSourceFrames, optimizeFramesKeepingOriginals } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource } from '../utils/url-detector.js';
@@ -138,26 +138,14 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       await progress(55, `Extracted ${rawFrames.length} frames, optimizing...`);
 
-      // Optimize frames
-      const optimizedPaths = await optimizeFrames(
-        rawFrames.map((f) => f.filePath),
-        tempDir,
-        { maxWidth },
-      ).catch((e: unknown) => {
-        warnings.push(`Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`);
-        return rawFrames.map((f) => f.filePath);
+      // Optimize frames, keeping the mapping back to the full-resolution
+      // originals so OCR below reads those and not the emitted downscale.
+      const optimized = await optimizeFramesKeepingOriginals(rawFrames, tempDir, {
+        maxWidth,
+        onWarning: (w) => warnings.push(w),
       });
-
-      // Optimized frame path -> the full-resolution frame it came from, so OCR
-      // below reads the original. Optimization is an output concern; recognizing
-      // text on the downscaled copy throws away the resolution Tesseract needs
-      // and silently drops everything on a dense UI capture.
-      const preOptimizePaths = new Map<string, string>();
-      let frames = rawFrames.map((frame, i) => {
-        const optimized = optimizedPaths[i] ?? frame.filePath;
-        if (optimized !== frame.filePath) preOptimizePaths.set(optimized, frame.filePath);
-        return { ...frame, filePath: optimized };
-      });
+      const frameOriginals = optimized.originals;
+      let frames = optimized.frames;
 
       // Dedup
       const beforeDedup = frames.length;
@@ -172,10 +160,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       // OCR
       await progress(75, `Running OCR on ${frames.length} frames...`);
-      const ocrSource = frames.map((frame) => {
-        const original = preOptimizePaths.get(frame.filePath);
-        return original ? { ...frame, filePath: original } : frame;
-      });
+      const ocrSource = ocrSourceFrames(frames, frameOriginals);
       const ocrResults = await extractTextFromFrames(ocrSource, ocrLanguage, (completed, total) => {
         const pct = 75 + Math.round((completed / total) * 15);
         progress(pct, `OCR: processing frame ${completed}/${total}...`);

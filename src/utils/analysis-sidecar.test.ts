@@ -206,6 +206,32 @@ describe('sidecar write/read', () => {
     }
   });
 
+  it('invalidates a sidecar written at a different frame width', async () => {
+    // maxWidth changes the persisted frame images, so a sidecar written at one
+    // width must not answer a request for another — with MCP_WRITE_SIDECARS the
+    // staleness would otherwise outlive the process, not just the 10min cache.
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+      await writeAnalysisSidecars(
+        clip,
+        fakeResult(frame),
+        { ...PARAMS, maxWidth: 0 },
+        {
+          transcriptFromWhisper: false,
+        },
+      );
+
+      expect(await readAnalysisSidecar(clip, { ...PARAMS, maxWidth: 1920 })).toBeNull();
+      expect(await readAnalysisSidecar(clip, PARAMS)).toBeNull(); // the 800px default
+      expect(await readAnalysisSidecar(clip, { ...PARAMS, maxWidth: 0 })).not.toBeNull();
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
   it('invalidates when the source video changes (stamp mismatch)', async () => {
     const tempDir = await createTempDir();
     try {

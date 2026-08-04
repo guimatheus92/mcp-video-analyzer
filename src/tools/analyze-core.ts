@@ -19,7 +19,12 @@ import {
 } from '../processors/frame-extractor.js';
 import { isMeaningfulOcr, ocrFrames } from '../processors/frame-ocr.js';
 import type { IOcrResult } from '../processors/frame-ocr.js';
-import { optimizeFrames } from '../processors/image-optimizer.js';
+import {
+  keyedFrameMaxWidth,
+  ocrSourceFrames,
+  optimizeFramesKeepingOriginals,
+} from '../processors/image-optimizer.js';
+import type { FrameOriginals } from '../processors/image-optimizer.js';
 import type { IAnalysisResult, IVideoMetadata } from '../types.js';
 import { readAnalysisSidecar, writeAnalysisSidecars } from '../utils/analysis-sidecar.js';
 import type { ResultDefiningParams } from '../utils/analysis-sidecar.js';
@@ -155,6 +160,10 @@ function resultDefiningParams(params: AnalyzeParams): ResultDefiningParams {
     detail: params.detail,
     maxFrames: params.maxFrames,
     threshold: params.threshold,
+    // The *effective* width, not the raw parameter: a cached 800 px result must
+    // not answer a later `maxWidth: 0` call, and a sidecar written under one
+    // MCP_FRAME_MAX_WIDTH must not be reused after that variable changes.
+    maxWidth: keyedFrameMaxWidth(params.maxWidth),
     ocrLanguage: params.ocrLanguage,
     model: params.transcribe.model,
     language: params.transcribe.language,
@@ -243,13 +252,9 @@ async function runAnalysisPipeline(
       tempDir = await createTempDir();
       let framesExtracted = false;
 
-      // Optimized frame path -> the full-resolution frame it came from. OCR reads
-      // the original: optimization is an *output* concern (token cost), and
-      // running recognition on the downscaled copy needlessly throws away the
-      // resolution Tesseract needs. It also used to cascade — unreadable frames
-      // yield no text, text-aware dedup degrades to the coarse visual hash, and
-      // a static-layout capture collapses to a single frame.
-      const preOptimizePaths = new Map<string, string>();
+      // Emitted frame path -> the full-resolution frame it came from, so OCR
+      // below reads the original (see optimizeFramesKeepingOriginals).
+      let frameOriginals: FrameOriginals = new Map();
 
       // Strategy 1: download (no-op for local files) + ffmpeg frame extraction
       // with scene→uniform-sampling fallback for static clips.
@@ -276,22 +281,12 @@ async function runAnalysisPipeline(
           await progress(70, `Extracted ${rawFrames.length} frames, optimizing...`);
 
           if (rawFrames.length > 0) {
-            const optimizedPaths = await optimizeFrames(
-              rawFrames.map((f) => f.filePath),
-              tempDir,
-              { maxWidth: params.maxWidth },
-            ).catch((e: unknown) => {
-              warnings.push(
-                `Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`,
-              );
-              return rawFrames.map((f) => f.filePath);
+            const optimized = await optimizeFramesKeepingOriginals(rawFrames, tempDir, {
+              maxWidth: params.maxWidth,
+              onWarning: (w) => warnings.push(w),
             });
-
-            result.frames = rawFrames.map((frame, i) => {
-              const optimized = optimizedPaths[i] ?? frame.filePath;
-              if (optimized !== frame.filePath) preOptimizePaths.set(optimized, frame.filePath);
-              return { ...frame, filePath: optimized };
-            });
+            result.frames = optimized.frames;
+            frameOriginals = optimized.originals;
             framesExtracted = true;
           }
         }
@@ -352,10 +347,7 @@ async function runAnalysisPipeline(
           // on-screen text (static-background Reels/Stories) survive instead of
           // being collapsed by a coarse perceptual hash.
           await progress(82, `Running OCR on ${result.frames.length} frames...`);
-          const ocrSource = result.frames.map((frame) => {
-            const original = preOptimizePaths.get(frame.filePath);
-            return original ? { ...frame, filePath: original } : frame;
-          });
+          const ocrSource = ocrSourceFrames(result.frames, frameOriginals);
           const perFrame = await ocrFrames(ocrSource, ocrLanguage, (completed, total) => {
             const pct = 82 + Math.round((completed / total) * 9);
             void progress(pct, `OCR: processing frame ${completed}/${total}...`);
