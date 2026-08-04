@@ -164,6 +164,9 @@ function resultDefiningParams(params: AnalyzeParams): ResultDefiningParams {
     // not answer a later `maxWidth: 0` call, and a sidecar written under one
     // MCP_FRAME_MAX_WIDTH must not be reused after that variable changes.
     maxWidth: keyedFrameMaxWidth(params.maxWidth),
+    // `|| undefined` drops `false` from the JSON key, so every sidecar and
+    // cache entry written before this field existed (all framed) stays valid.
+    skipFrames: params.skipFrames || undefined,
     ocrLanguage: params.ocrLanguage,
     model: params.transcribe.model,
     language: params.transcribe.language,
@@ -177,12 +180,7 @@ function resultDefiningParams(params: AnalyzeParams): ResultDefiningParams {
 // Adding a param without deciding which fails `npm run typecheck` with the
 // field name in the error — instead of silently serving stale cached results,
 // which is what an unkeyed `maxWidth` did until review caught it.
-type ExcludedFromCacheKey =
-  | 'forceRefresh' // cache directive — deciding whether to READ the cache, never part of the key
-  // TODO(#29): skipFrames DOES change the result (a frameless analysis is
-  // cached under the same key as a framed one) — pre-existing sibling of the
-  // #28 maxWidth bug, excluded here until that issue lands the key change.
-  | 'skipFrames';
+type ExcludedFromCacheKey = 'forceRefresh'; // cache directive — deciding whether to READ the cache, never part of the key
 // Flattening is manual and BY NAME: `transcribe` is the only nested object
 // today. A new nested param object (e.g. `frameOptions: {...}`) must be
 // flattened here the same way, or it counts as a single leaf and its

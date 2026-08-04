@@ -232,6 +232,35 @@ describe('sidecar write/read', () => {
     }
   });
 
+  it('keys on skipFrames but keeps pre-#29 sidecars valid for framed reads', async () => {
+    // skipFrames: true is present in the key; false resolves to an absent key
+    // (`|| undefined` in resultDefiningParams), byte-identical to every sidecar
+    // written before the field existed — all of which hold frames.
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+
+      // A legacy (pre-#29, framed) sidecar: key has no skipFrames entry.
+      await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, { transcriptFromWhisper: true });
+      expect(await readAnalysisSidecar(clip, { ...PARAMS, skipFrames: true })).toBeNull();
+      expect(await readAnalysisSidecar(clip, PARAMS)).not.toBeNull(); // back-compat pin
+
+      // A frameless sidecar must not answer a framed read either.
+      await writeAnalysisSidecars(
+        clip,
+        { ...fakeResult(frame), frames: [] },
+        { ...PARAMS, skipFrames: true },
+        { transcriptFromWhisper: true },
+      );
+      expect(await readAnalysisSidecar(clip, PARAMS)).toBeNull();
+      expect(await readAnalysisSidecar(clip, { ...PARAMS, skipFrames: true })).not.toBeNull();
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
   it('invalidates when the source video changes (stamp mismatch)', async () => {
     const tempDir = await createTempDir();
     try {

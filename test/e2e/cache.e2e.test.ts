@@ -1,7 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearAdapters, registerAdapter } from '../../src/adapters/adapter.interface.js';
+import { LocalFileAdapter } from '../../src/adapters/local-file.adapter.js';
+import { getAnalysis, resolveAnalyzeParams } from '../../src/tools/analyze-core.js';
 import type { IAnalysisResult } from '../../src/types.js';
 import { AnalysisCache, cacheKey } from '../../src/utils/cache.js';
 import { filterAnalysisResult } from '../../src/utils/field-filter.js';
+import { sceneCutClip } from '../helpers/index.js';
 
 function createResult(title = 'Test'): IAnalysisResult {
   return {
@@ -103,5 +107,53 @@ describe('E2E: Cache integration', () => {
     expect(cache.get('a')).toBeUndefined();
     expect(cache.get('d')?.metadata.title).toBe('D');
     expect(cache.stats().size).toBe(3);
+  });
+});
+
+describe('E2E: skipFrames keys the analysis cache (issue #29, real ffmpeg)', () => {
+  beforeAll(() => {
+    clearAdapters();
+    registerAdapter(new LocalFileAdapter());
+  });
+
+  afterAll(() => {
+    clearAdapters();
+  });
+
+  beforeEach(() => {
+    // Never persist sidecars next to the shared cached golden clip, and pin
+    // the width env so ambient config can't perturb the key under test.
+    vi.stubEnv('MCP_WRITE_SIDECARS', '');
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // The issue #29 repro, pinned through the real getAnalysis pipeline: a
+  // frameless analysis cached first must not answer a later framed call for
+  // the same file. Pre-fix both hashed to one key, so the second call served
+  // the cached zero-frame result — this test's framed call asserts recovered
+  // content (empty = FAIL), per the golden-fixture convention.
+  it('a framed call after a skipFrames call re-runs the pipeline and yields frames', async () => {
+    const clip = await sceneCutClip();
+
+    const frameless = await getAnalysis(
+      clip,
+      resolveAnalyzeParams({ skipFrames: true, forceRefresh: true }),
+    );
+    try {
+      expect(frameless.result.frames).toHaveLength(0);
+    } finally {
+      await frameless.cleanup();
+    }
+
+    const framed = await getAnalysis(clip, resolveAnalyzeParams({}));
+    try {
+      expect(framed.result.frames.length).toBeGreaterThan(0);
+    } finally {
+      await framed.cleanup();
+    }
   });
 });

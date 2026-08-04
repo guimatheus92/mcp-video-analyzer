@@ -288,7 +288,7 @@ For motion, vibration, animations, or fast scrolling — burst mode captures N f
 
 ## Caching
 
-Results are cached in memory for 10 minutes. Subsequent calls with the same URL and options return instantly. Use `forceRefresh: true` to bypass the cache.
+Results are cached in memory for 10 minutes. Subsequent calls with the same URL and options return instantly. Use `forceRefresh: true` to bypass the cache. `skipFrames` is part of the cache and sidecar key, so a transcript-only analysis and a framed one of the same URL never answer for each other.
 
 ### Persistent sidecars (resumable bulk processing)
 

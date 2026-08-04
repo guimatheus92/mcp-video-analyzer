@@ -40,6 +40,12 @@ export interface ResultDefiningParams {
    * so those stay valid instead of being invalidated for no change in output.
    */
   maxWidth?: number;
+  /**
+   * `true` = frameless analysis (issue #29). Absent = frames included, which
+   * is also what every sidecar written before this field existed holds — so
+   * those stay valid instead of being invalidated for no change in output.
+   */
+  skipFrames?: true;
   ocrLanguage: string;
   model?: string;
   language?: string;
