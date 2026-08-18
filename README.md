@@ -25,7 +25,7 @@ No existing video MCP combines **transcripts + visual frames + metadata** in one
 
 ### Prerequisites
 
-- **Node.js 18+** — required to run the server via `npx`
+- **Node.js 22.12+** — required to run the server via `npx`
 - **yt-dlp** — **required** for YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs; optional for everything else (improves Loom download quality). Install with `pip install yt-dlp`
 - **Chrome/Chromium** (optional) — fallback for frame extraction if yt-dlp is unavailable
 
@@ -478,12 +478,22 @@ npm install
 # Run all checks (format, lint, typecheck, knip, tests)
 npm run check
 
+# Audit dependencies. `security` covers what the published package ships and
+# is a blocking CI job; `security:all` adds devDependencies. Both also run on
+# a weekly cron, because npm audit reads a live advisory database.
+npm run security
+
 # Build
 npm run build
 
 # Run E2E tests (requires network; add WHISPER_E2E=1 to include the
 # transcription outcome test — needs a whisper CLI installed)
 npm run test:e2e
+
+# Just the video-format matrix: a real clip per container/codec
+# (mp4/h264+hevc+av1, webm, mkv, mov, avi, m4v, mpeg, mpg, m2ts, mts,
+# 3gp, ogv, flv, wmv) decoded end to end. No network, ~15s.
+npm run test:formats
 
 # Build + boot the real MCP server/CLI (seconds)
 npm run test:smoke

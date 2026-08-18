@@ -10,7 +10,7 @@ Preferred: install the `video` skill and follow its contract — [skills/video/S
 npx skills add guimatheus92/mcp-video-analyzer
 ```
 
-Without the skill, the one-shot CLI works from any shell (Node 18+ only; ffmpeg is bundled):
+Without the skill, the one-shot CLI works from any shell (Node 22.12+ only; ffmpeg is bundled):
 
 ```bash
 npx -y mcp-video-analyzer@latest analyze "<video-url-or-path>"

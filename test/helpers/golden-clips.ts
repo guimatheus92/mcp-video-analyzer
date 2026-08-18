@@ -104,13 +104,19 @@ function textLine(
  * `args` is the full ffmpeg argv MINUS the output path (appended here) —
  * anything that influences the rendered clip must flow through it.
  */
-async function cachedClip(name: string, args: string[]) {
-  const recipeHash = createHash('sha256').update(JSON.stringify(args)).digest('hex').slice(0, 8);
-  const finalPath = join(GOLDEN_DIR, `${name}-${recipeHash}.mp4`);
+async function cachedClip(name: string, args: string[], ext = 'mp4') {
+  // `ext` is hashed alongside the argv, not just appended to the name: ffmpeg
+  // picks its muxer from the output extension, so the container is a recipe
+  // input like any other and must self-invalidate the same way.
+  const recipeHash = createHash('sha256')
+    .update(JSON.stringify([args, ext]))
+    .digest('hex')
+    .slice(0, 8);
+  const finalPath = join(GOLDEN_DIR, `${name}-${recipeHash}.${ext}`);
   if (existsSync(finalPath)) return finalPath;
 
   await mkdir(GOLDEN_DIR, { recursive: true });
-  const tmpPath = join(GOLDEN_DIR, `${name}-${recipeHash}.${process.pid}.tmp.mp4`);
+  const tmpPath = join(GOLDEN_DIR, `${name}-${recipeHash}.${process.pid}.tmp.${ext}`);
   // GOLDEN_FFMPEG: generation-only override for environments whose bundled
   // ffmpeg lacks drawtext (the ffmpeg-static linux build — see file header).
   // The binary is not part of the cache key: CI tmpdirs are ephemeral, and a
@@ -232,5 +238,144 @@ export async function speechClip(): Promise<string> {
     'yuv420p',
     '-metadata',
     `comment=speech-${wavHash}`,
+  ]);
+}
+
+/**
+ * One row of the container/codec matrix in
+ * `test/e2e/video-formats.e2e.test.ts`.
+ *
+ * `ext` is the extension exactly as it appears in `VIDEO_EXTENSIONS`
+ * (`src/utils/url-detector.ts`) — leading dot included — because the drift
+ * guard compares the two sets directly.
+ */
+export interface VideoFormat {
+  ext: string;
+  /** ffmpeg `-f` muxer name (often NOT the extension: .m4v -> ipod, .wmv -> asf). */
+  muxer: string;
+  videoCodec: string;
+  audioCodec: string;
+  /** Frame size. h263 only accepts a fixed set; 352x288 is the CIF entry. */
+  size?: string;
+  /** The flv muxer rejects mp3 outside {44100, 22050, 11025}. */
+  sampleRate?: number;
+  extraVideoArgs?: string[];
+}
+
+/** Generated duration, in seconds, of every clip in {@link FORMAT_MATRIX}. */
+export const FORMAT_CLIP_SECONDS = 2;
+
+/**
+ * Every container in `VIDEO_EXTENSIONS` that reaches ffmpeg in production,
+ * plus a second and third codec inside mp4 (hevc, av1) because a container
+ * that demuxes is not the same claim as a codec that decodes.
+ *
+ * Each row was verified against the BUNDLED ffmpeg-static binary — the one
+ * production actually runs — not against a system ffmpeg. Total encode cost
+ * for the whole matrix is ~1s; the clips are then cached across runs by
+ * `cachedClip`, keyed on the full argv + container.
+ *
+ * The video source is `testsrc`: a MOVING, non-black pattern. That is
+ * load-bearing. Black-frame filtering legitimately empties a black clip, so a
+ * black source would make "0 frames" simultaneously correct and catastrophic —
+ * exactly the ambiguity that let #28 hide. Here, 0 frames is unambiguously a
+ * failure.
+ *
+ * The audio track is `anullsrc` (digital silence) rather than a tone: it keeps
+ * `hasAudio` true so the demux assertion is real, while the silent-audio gate
+ * in `transcribeAudio` short-circuits before any whisper strategy runs, so the
+ * matrix stays fast and needs no ASR backend.
+ */
+export const FORMAT_MATRIX: readonly VideoFormat[] = [
+  { ext: '.mp4', muxer: 'mp4', videoCodec: 'libx264', audioCodec: 'aac' },
+  {
+    ext: '.mp4',
+    muxer: 'mp4',
+    videoCodec: 'libx265',
+    audioCodec: 'aac',
+    // hvc1 tag: QuickTime/Safari reject the default hev1 in mp4.
+    // log-level=none silences x265's banner, which otherwise floods stderr.
+    extraVideoArgs: ['-tag:v', 'hvc1', '-x265-params', 'log-level=none'],
+  },
+  {
+    ext: '.mp4',
+    muxer: 'mp4',
+    videoCodec: 'libaom-av1',
+    audioCodec: 'aac',
+    // Fastest usable settings: av1 at default effort would dominate the
+    // matrix's runtime, and this test asserts decodability, not quality.
+    extraVideoArgs: ['-cpu-used', '8', '-crf', '50'],
+  },
+  {
+    ext: '.webm',
+    muxer: 'webm',
+    videoCodec: 'libvpx-vp9',
+    audioCodec: 'libopus',
+    extraVideoArgs: ['-deadline', 'realtime', '-cpu-used', '8'],
+  },
+  { ext: '.mkv', muxer: 'matroska', videoCodec: 'libx264', audioCodec: 'aac' },
+  { ext: '.mov', muxer: 'mov', videoCodec: 'libx264', audioCodec: 'aac' },
+  { ext: '.avi', muxer: 'avi', videoCodec: 'mpeg4', audioCodec: 'libmp3lame' },
+  { ext: '.m4v', muxer: 'ipod', videoCodec: 'libx264', audioCodec: 'aac' },
+  { ext: '.mpeg', muxer: 'mpeg', videoCodec: 'mpeg2video', audioCodec: 'mp2' },
+  { ext: '.mpg', muxer: 'mpeg', videoCodec: 'mpeg2video', audioCodec: 'mp2' },
+  { ext: '.m2ts', muxer: 'mpegts', videoCodec: 'libx264', audioCodec: 'aac' },
+  { ext: '.mts', muxer: 'mpegts', videoCodec: 'mpeg2video', audioCodec: 'mp2' },
+  { ext: '.3gp', muxer: '3gp', videoCodec: 'h263', audioCodec: 'aac', size: '352x288' },
+  { ext: '.ogv', muxer: 'ogg', videoCodec: 'libtheora', audioCodec: 'libvorbis' },
+  { ext: '.flv', muxer: 'flv', videoCodec: 'flv', audioCodec: 'libmp3lame', sampleRate: 44100 },
+  { ext: '.wmv', muxer: 'asf', videoCodec: 'wmv2', audioCodec: 'wmav2' },
+];
+
+/** Generate (or reuse) the clip for one {@link FORMAT_MATRIX} row. */
+export function formatClip(format: VideoFormat): Promise<string> {
+  const size = format.size ?? '320x240';
+  const sampleRate = format.sampleRate ?? 16000;
+  return cachedClip(
+    `fmt-${format.ext.slice(1)}-${format.videoCodec}`,
+    [
+      '-y',
+      '-f',
+      'lavfi',
+      '-i',
+      `testsrc=size=${size}:rate=10:duration=${FORMAT_CLIP_SECONDS}`,
+      '-f',
+      'lavfi',
+      '-i',
+      `anullsrc=channel_layout=mono:sample_rate=${sampleRate}`,
+      '-c:v',
+      format.videoCodec,
+      ...(format.extraVideoArgs ?? []),
+      '-pix_fmt',
+      'yuv420p',
+      '-c:a',
+      format.audioCodec,
+      '-ar',
+      String(sampleRate),
+      // anullsrc is infinite; without this the mux never ends.
+      '-shortest',
+      '-f',
+      format.muxer,
+    ],
+    format.ext.slice(1),
+  );
+}
+
+/**
+ * A portrait clip — the Reels/Stories shape. Vertical video had zero decode
+ * coverage despite being a documented primary use case, and aspect handling is
+ * exactly where a resize regression hides: a width-capped landscape frame and a
+ * width-capped portrait frame exercise different branches of
+ * `resize({ width, withoutEnlargement })`.
+ */
+export function portraitClip(): Promise<string> {
+  return cachedClip('portrait', [
+    '-y',
+    '-f',
+    'lavfi',
+    '-i',
+    `testsrc=size=1080x1920:rate=10:duration=${FORMAT_CLIP_SECONDS}`,
+    '-pix_fmt',
+    'yuv420p',
   ]);
 }

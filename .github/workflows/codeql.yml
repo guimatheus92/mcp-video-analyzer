@@ -1,0 +1,48 @@
+name: CodeQL
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # CodeQL ships new queries continuously; a weekly re-scan of an unchanged
+  # main is how a newly written query finds old code. Wednesday, to spread
+  # runner load away from the Sunday (Dependabot) and Monday (audit) slots.
+  schedule:
+    - cron: '0 6 * * 3'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  analyze:
+    name: Analyze (javascript-typescript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      # `actions: read` lets CodeQL read workflow run metadata on fork PRs;
+      # `security-events: write` is what uploads the SARIF to the Security
+      # tab. Neither is in the default token.
+      actions: read
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          # `none` is the right build mode for javascript-typescript: CodeQL
+          # reads the sources directly, so `npm ci` + `npm run build` would
+          # add minutes and change nothing in the database.
+          build-mode: none
+          # security-extended adds ~20 queries over the default suite, notably
+          # js/second-order-command-injection — which matters for a codebase
+          # whose whole job is spawning ffmpeg/yt-dlp/whisper child processes
+          # with URL- and env-derived arguments.
+          queries: security-extended
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:javascript-typescript

@@ -4,6 +4,9 @@ Thanks for your interest in contributing! This guide will help you get started.
 
 ## Setup
 
+Requires **Node.js 22.12+** (set by `puppeteer-core@25`; `sharp@0.35` needs
+≥20.9 and `vite@8` needs ≥22.12 — see `package.json` `engines`).
+
 ```bash
 git clone https://github.com/guimatheus92/mcp-video-analyzer.git
 cd mcp-video-analyzer
@@ -27,6 +30,9 @@ npm run test:watch
 # Auto-fix formatting and lint issues
 npm run format && npm run lint:fix
 
+# Audit the dependencies the published package actually ships
+npm run security
+
 # Open the MCP Inspector for manual testing
 npm run inspect
 ```
@@ -37,6 +43,7 @@ npm run inspect
 npm run test              # Unit tests (fast, no network)
 npm run test:coverage     # Unit tests with coverage report
 npm run test:e2e          # E2E tests (requires network + yt-dlp/Chrome)
+npm run test:formats      # Just the video-format matrix (no network, ~15s)
 ```
 
 Tests live next to their source files: `foo.ts` → `foo.test.ts`.
@@ -45,6 +52,46 @@ Two e2e opt-ins/quirks:
 
 - `WHISPER_E2E=1 npm run test:e2e` also runs the transcription outcome test (needs a whisper CLI — `pip install -U openai-whisper` or `pipx install whisper-ctranslate2` + `WHISPER_BIN=whisper-ctranslate2`). With the flag set and no whisper installed the test **fails** by design; CI always runs it.
 - On Linux, golden text clips need a drawtext-capable ffmpeg: `GOLDEN_FFMPEG=ffmpeg npm run test:e2e` (distro ffmpeg; the bundled `ffmpeg-static` Linux build lacks drawtext). Windows/macOS need nothing.
+
+## Security checks
+
+```bash
+npm run security      # shipped deps only (--omit=dev), fails at moderate+
+npm run security:all  # whole tree including devDependencies, fails at high+
+```
+
+Both run as blocking CI jobs on every PR, on every push to `main`, **and on a
+weekly cron**. The cron matters: `npm audit` reads a *live* advisory database,
+so a PR that was green yesterday can go red today with no code change. That is
+working as intended, not a flake.
+
+`npm run security` is deliberately **not** part of `npm run check`. `check` is
+what `prepublishOnly` runs and has to stay offline and deterministic — wiring a
+live network lookup into it means an advisory published overnight fails
+`npm publish` for code that never changed.
+
+Two thresholds, on purpose. Shipped dependencies (what reaches a user through
+the npm tarball and the Docker runtime stage) get the stricter `moderate` bar.
+The full tree is gated at `high`, so dev-tool moderate churn does not block an
+unrelated bug fix — while still catching the next critical in a test runner
+(**both** criticals fixed in v0.9.0 were dev-only).
+
+### Unblocking a red audit gate
+
+In escalation order — there is deliberately **no allowlist file**, because an
+allowlist entry is added under deadline pressure and reviewed never:
+
+1. `npm audit fix`, commit the lockfile.
+2. Direct bump: `npm i <pkg>@<fixed-version>`.
+3. `overrides` in `package.json` when the vulnerable package is transitive and
+   its parent has not released — with the removal condition written in a
+   comment next to it (`npm ls <pkg>` shows every consumer on the fixed range →
+   delete the override).
+4. Replace or drop the dependency.
+5. Genuinely no fix anywhere (v0.9.0's `extract-zip`, which had no fixed
+   version and was only escapable by a major bump of its *parent*): that is a
+   judgement call, and it belongs in the PR description where a human reads it,
+   not in a config file that silences it forever.
 
 ## Project Structure
 
@@ -69,6 +116,7 @@ skills/video/     # The portable `video` agent skill (SKILL.md contract)
 - **Two-strategy frame extraction** — yt-dlp+ffmpeg (primary) → headless Chrome (fallback). Both are optional.
 - **Never hardcode a container extension in a yt-dlp `-o`** — use `-o <name>.%(ext)s` and glob for `<name>.*`. On a DASH merge yt-dlp appends the real container, so `-o x.mp4` produces `x.mp4.webm` and any `existsSync('x.mp4')` check throws away a download that worked (issue #24).
 - **TypeScript strict mode** — no `any` unless explicitly necessary.
+- **Every container in `VIDEO_EXTENSIONS` must be decoded by a test** — `test/e2e/video-formats.e2e.test.ts` generates a real clip per container/codec and asserts frames come back. Its drift guard fails if you add an extension to `src/utils/url-detector.ts` without either adding a matrix row or documenting an exclusion.
 
 ## Adding a New Platform Adapter
 

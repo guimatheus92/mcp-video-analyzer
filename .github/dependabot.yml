@@ -1,0 +1,94 @@
+# Version updates only.
+#
+# Dependabot *security* updates are a repository SETTING (Settings -> Advanced
+# Security -> Dependabot security updates), not a config option — this file
+# cannot turn them on. They deliberately stay OUTSIDE every `groups:` block
+# below, because `applies-to` defaults to `version-updates`. That split is the
+# design: routine drift arrives as one batched PR per ecosystem per week, while
+# a security fix arrives on its own, immediately, with its own CI run and its
+# own revert boundary. `open-pull-requests-limit` does not apply to security
+# updates either, so batching can never starve one.
+#
+# There are deliberately NO npm `ignore:` entries. An ignore on a package is
+# indistinguishable from an ignore on that package's next CVE.
+version: 2
+
+updates:
+  # ---------------------------------------------------------------- npm ----
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+      include: scope
+    groups:
+      # One PR for all routine drift, prod and dev together. Merging happens
+      # only on green CI, and CI here includes an e2e leg that downloads real
+      # videos — N small PRs cost N full runs. One batch, one run.
+      npm:
+        patterns:
+          - '*'
+        update-types:
+          - minor
+          - patch
+    # Majors are intentionally NOT grouped. The v0.9.0 release is the proof:
+    # a sharp/puppeteer-core major moved `engines.node`, both Dockerfile
+    # stages, and four documentation files. Each major needs its own PR, its
+    # own CI run, and its own docs sweep.
+
+  # ----------------------------------------------------- github-actions ----
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
+    commit-message:
+      prefix: ci
+      include: scope
+    groups:
+      # Actions majors are `v4` -> `v5` tag moves: routine, and batchable in a
+      # way npm majors are not.
+      github-actions:
+        patterns:
+          - '*'
+
+  # --------------------------------------------------------------- docker ----
+  # Watches the two `FROM node:22-slim` stages in ./Dockerfile.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: sunday
+      time: '06:00'
+      timezone: Etc/UTC
+    open-pull-requests-limit: 2
+    labels:
+      - dependencies
+      - docker
+    commit-message:
+      prefix: build
+      include: scope
+    ignore:
+      # The Node major here is COUPLED to `engines.node` in package.json, to
+      # README/AGENTS/SKILL.md, and to a consumer-visible semver bump, so a PR
+      # that changes only the Dockerfile tag is guaranteed to be incomplete.
+      # This masks nothing security-relevant: Node's own CVE fixes ship inside
+      # the floating `22-slim` tag, which `docker build` re-pulls on every run
+      # and Dependabot never sees. Revisit as Node 22 nears EOL (2027-04).
+      - dependency-name: node
+        update-types:
+          - version-update:semver-major

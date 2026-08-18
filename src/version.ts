@@ -4,4 +4,4 @@
  * in CLAUDE.md. `as const` preserves the `${number}.${number}.${number}`
  * literal type FastMCP's `version` field requires.
  */
-export const VERSION = '0.8.0' as const;
+export const VERSION = '0.9.0' as const;

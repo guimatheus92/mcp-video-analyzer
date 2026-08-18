@@ -1,6 +1,6 @@
 {
   "name": "mcp-video-analyzer",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "MCP server for video analysis — extracts transcripts, key frames, OCR text, and metadata from video URLs and local files. Supports Loom, YouTube and other yt-dlp platforms, direct video URLs, and local video files.",
   "author": "guimatheus92",
   "license": "MIT",
@@ -36,7 +36,10 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "test:formats": "vitest run --config vitest.e2e.config.ts test/e2e/video-formats.e2e.test.ts",
     "check": "npm run format:check && npm run lint && npm run typecheck && npm run knip && npm run test",
+    "security": "npm audit --omit=dev --audit-level=moderate",
+    "security:all": "npm audit --audit-level=high",
     "verify-all": "npm run check && npm run test:e2e && npm run test:smoke && npm run verify-package",
     "test:smoke": "npm run build && vitest run --config vitest.smoke.config.ts",
     "verify-package": "npm run build && npx tsx scripts/verify-package.ts",
@@ -68,14 +71,14 @@
     "ai"
   ],
   "engines": {
-    "node": ">=18"
+    "node": ">=22.12.0"
   },
   "dependencies": {
     "cheerio": "^1.2.0",
     "fastmcp": "^3.34.0",
     "ffmpeg-static": "^5.3.0",
-    "puppeteer-core": "^24.39.0",
-    "sharp": "^0.34.5",
+    "puppeteer-core": "^25.8.0",
+    "sharp": "^0.35.3",
     "tesseract.js": "^7.0.0",
     "zod": "^4.3.6"
   },
@@ -83,13 +86,13 @@
     "@eslint/js": "^10.0.1",
     "@trivago/prettier-plugin-sort-imports": "^6.0.2",
     "@types/node": "^25.4.0",
-    "@vitest/coverage-v8": "^4.0.18",
+    "@vitest/coverage-v8": "^4.1.11",
     "eslint": "^10.0.3",
     "knip": "^5.86.0",
     "prettier": "^3.8.1",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.12",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.11"
   }
 }

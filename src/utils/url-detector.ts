@@ -24,7 +24,12 @@ const YTDLP_PATTERNS: RegExp[] = [
 // both local files and direct URLs). The extension only gates detection —
 // ffmpeg does the actual demuxing, so most common containers work. `.ts` is
 // intentionally excluded: it collides with the TypeScript source extension.
-const VIDEO_EXTENSIONS = new Set([
+//
+// Exported for the format-matrix drift guard in
+// test/e2e/video-formats.e2e.test.ts: every entry here must be either decoded
+// by that matrix or on its documented exclusion list, so adding an extension
+// forces a test decision instead of silently shipping an untested container.
+export const VIDEO_EXTENSIONS = new Set([
   '.mp4',
   '.webm',
   '.mov',

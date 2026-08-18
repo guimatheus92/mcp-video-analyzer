@@ -3,6 +3,11 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   test: {
     globals: true,
+    // Required on Windows (see CLAUDE.md), and the unit + smoke configs
+    // already set it. It was missing here only because the e2e suite ran on
+    // ubuntu exclusively — `npm run test:formats` now runs one of these files
+    // on the windows CI job.
+    pool: 'forks',
     include: ['test/e2e/**/*.e2e.test.ts'],
     // Above the 300s yt-dlp download ceiling in YtDlpAdapter.downloadVideo,
     // plus room for frame extraction and a cold-runner tessdata fetch. At

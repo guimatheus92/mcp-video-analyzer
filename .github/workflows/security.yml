@@ -1,0 +1,57 @@
+name: Security
+
+# Kept out of ci.yml on purpose: the weekly cron below should not drag the
+# 30+ minute e2e/Docker suite along with it.
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # `npm audit` reads a LIVE advisory database, so this repo's dependency risk
+  # changes on days when nobody touches this repo. Without a cron, a newly
+  # published advisory would first surface weeks later as an unrelated PR
+  # mysteriously going red. Monday: Sunday's Dependabot batch is already open,
+  # so this run reports whether it was enough.
+  schedule:
+    - cron: '0 6 * * 1'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  # Shipped deps only — what actually reaches a user, via the npm tarball
+  # (`files: ["dist"]` + dependencies) and the Docker runtime stage
+  # (`npm ci --omit=dev`). Small closure, so the stricter `moderate` bar is
+  # affordable here and a finding is a real "our users are exposed" signal.
+  audit-prod:
+    name: audit (shipped deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # No `npm ci`: npm audit builds the tree from package-lock.json alone,
+      # which skips an ~80MB ffmpeg-static download per run. If a future npm
+      # ever regresses on that, add `npm ci --ignore-scripts` here — NOT a
+      # plain `npm ci`.
+      - run: npm run security
+
+  # Full tree including devDependencies, at `high`. v0.9.0 brought the whole
+  # tree to zero, so this gate starts green and costs nothing today — while
+  # still catching the next vitest-class critical (BOTH criticals fixed in
+  # v0.9.0 were dev-only, and a non-blocking gate would have caught neither).
+  # Dev-dependency *moderate* churn is deliberately left out: it is the
+  # noisiest class, and a gate that cries wolf is a gate that gets bypassed.
+  audit-dev:
+    name: audit (full tree)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm run security:all

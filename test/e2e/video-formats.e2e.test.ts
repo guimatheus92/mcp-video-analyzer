@@ -1,0 +1,205 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { clearAdapters, registerAdapter } from '../../src/adapters/adapter.interface.js';
+import { LocalFileAdapter } from '../../src/adapters/local-file.adapter.js';
+import {
+  extractKeyFrames,
+  probeVideo,
+  probeVideoDuration,
+} from '../../src/processors/frame-extractor.js';
+import { registerAnalyzeVideo } from '../../src/tools/analyze-video.js';
+import { cleanupTempDir, createTempDir } from '../../src/utils/temp-files.js';
+import { VIDEO_EXTENSIONS, detectPlatform } from '../../src/utils/url-detector.js';
+import {
+  FORMAT_CLIP_SECONDS,
+  FORMAT_MATRIX,
+  captureToolExecute,
+  formatClip,
+  frameCountOf,
+  imageWidths,
+  noProgress,
+  portraitClip,
+  warningsOf,
+} from '../helpers/index.js';
+
+/**
+ * Decode-outcome tests across every container this server accepts.
+ *
+ * Before this file, `VIDEO_EXTENSIONS` listed 14 containers that reach ffmpeg
+ * in production while only mp4/h264 was genuinely exercised (plus the one
+ * webm/vp9 probe added by #24). The other twelve were covered by *string*
+ * assertions in `url-detector.test.ts` — the extension was checked, no file was
+ * ever opened. A codec the bundled ffmpeg-static build could not decode would
+ * have produced zero frames and zero test failures, because "0 frames" is a
+ * legitimate graceful-degradation outcome everywhere else in this suite.
+ *
+ * Every clip here is a MOVING `testsrc` pattern with a real audio track, so
+ * empty is never valid: 0 frames = FAIL. Same "empty must be able to fail" rule
+ * the golden OCR and transcription fixtures exist to satisfy (CLAUDE.md →
+ * Testing conventions).
+ *
+ * No network and no drawtext — clips come from the bundled binary — so this
+ * file needs neither `GOLDEN_FFMPEG` nor a runner with a distro ffmpeg. That is
+ * why `npm run test:formats` also runs on the Windows CI job while the rest of
+ * the e2e suite stays ubuntu-only.
+ */
+describe('E2E: video format matrix (real ffmpeg decode)', () => {
+  beforeAll(() => {
+    clearAdapters();
+    registerAdapter(new LocalFileAdapter());
+  });
+
+  afterAll(() => {
+    clearAdapters();
+  });
+
+  beforeEach(() => {
+    // MCP_WRITE_SIDECARS is the load-bearing stub. Clips are cached in the OS
+    // tmpdir ACROSS runs, so with sidecars enabled the first run would write
+    // <clip>.analysis.json beside each clip and every later run would replay
+    // it — ffmpeg never invoked, assertions green, decoding entirely unproven.
+    // A test that cannot fail is worse than no test.
+    vi.stubEnv('MCP_WRITE_SIDECARS', '');
+    // The width/quality/preprocess trio for the same reason as golden-ocr:
+    // ambient values move the emitted frames out from under the assertions.
+    vi.stubEnv('MCP_FRAME_MAX_WIDTH', '');
+    vi.stubEnv('MCP_FRAME_JPEG_QUALITY', '');
+    vi.stubEnv('MCP_OCR_PREPROCESS', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  describe.each(FORMAT_MATRIX)('$ext ($videoCodec / $audioCodec)', (format) => {
+    it('routes, probes, decodes frames, and exposes its audio track', async () => {
+      const clip = await formatClip(format);
+
+      // 1. The extension actually routes to a video source. A container listed
+      //    in VIDEO_EXTENSIONS that detectPlatform rejects is unreachable.
+      expect(detectPlatform(clip)).toBe('local');
+
+      // 2. Duration parses out of ffmpeg's stderr for THIS container. asf,
+      //    mpeg and flv print a different header shape than mp4, and
+      //    parseDurationFromStderr has to cope with all of them.
+      const duration = await probeVideoDuration(clip);
+      expect(duration).toBeGreaterThan(FORMAT_CLIP_SECONDS * 0.5);
+      expect(duration).toBeLessThan(FORMAT_CLIP_SECONDS * 3);
+
+      // 3. The codec genuinely decodes. testsrc is non-black, so black-frame
+      //    filtering cannot legitimately empty this: 0 frames means the bundled
+      //    build cannot decode this stream.
+      const dir = await createTempDir('fmt-');
+      try {
+        const { frames, warnings } = await extractKeyFrames(clip, dir, { maxFrames: 3 });
+        expect(frames.length, `decoded frames for ${format.ext}`).toBeGreaterThan(0);
+        // Not a blanket "no warnings" check: extractKeyFrames legitimately
+        // reports the uniform-sampling fallback here (testsrc has no hard
+        // cuts). Only the extraction-failure warnings matter.
+        expect(
+          warnings.filter((w) => /extraction failed/i.test(w)),
+          `extraction failures for ${format.ext}`,
+        ).toEqual([]);
+      } finally {
+        await cleanupTempDir(dir);
+      }
+
+      // 4. The audio track survives the mux/demux round trip. Transcription
+      //    reads this: a container whose audio ffmpeg cannot see yields an
+      //    empty transcript, indistinguishable from a genuinely silent video.
+      const probe = await probeVideo(clip);
+      expect(probe.hasAudio, `hasAudio for ${format.ext}`).toBe(true);
+      expect(probe.audioCodec, `audioCodec for ${format.ext}`).toBeTruthy();
+    });
+
+    it('analyze_video returns frames through the MCP tool surface', async () => {
+      const clip = await formatClip(format);
+      const execute = captureToolExecute(registerAnalyzeVideo);
+
+      const result = await execute(
+        { url: clip, options: { detail: 'standard', maxFrames: 2, forceRefresh: true } },
+        noProgress,
+      );
+
+      // The processor assertion above proves ffmpeg can decode the file; this
+      // proves the whole tool path does — adapter routing, the analysis
+      // pipeline, frame emission, and the JSON contract a client parses.
+      expect(frameCountOf(result), `frameCount for ${format.ext}`).toBeGreaterThan(0);
+
+      // Positive proof that the AUDIO half of this container demuxed, end to
+      // end. Every clip carries an anullsrc track, so the silence gate firing
+      // means extractAudioTrack pulled real audio out of THIS container and
+      // volumedetect measured it. A container whose audio ffmpeg cannot see
+      // produces the same empty transcript with this warning absent — which
+      // is precisely the ambiguity a "transcript is empty" assertion could
+      // never distinguish.
+      expect(
+        warningsOf(result).filter((w) => /Audio track is silent/i.test(w)),
+        `silence-gate warning for ${format.ext} (proves the audio track demuxed)`,
+      ).toHaveLength(1);
+    });
+  });
+
+  /**
+   * Drift guard. Without it, adding an extension to VIDEO_EXTENSIONS ships an
+   * untested container and nothing says so — the exact failure mode this file
+   * exists to close.
+   *
+   * The prove-it-scanned-something assertions come first: a guard that silently
+   * passes when both sets are empty is the scan-style anti-pattern CLAUDE.md
+   * bans.
+   */
+  describe('coverage drift guard', () => {
+    // Extensions deliberately NOT decoded here, each with its reason. Empty
+    // today — the matrix covers all 14. Any entry added here must say why.
+    const DOCUMENTED_EXCLUSIONS = new Map<string, string>();
+
+    it('decodes every extension in VIDEO_EXTENSIONS', () => {
+      expect(VIDEO_EXTENSIONS.size).toBeGreaterThanOrEqual(14);
+      expect(FORMAT_MATRIX.length).toBeGreaterThanOrEqual(VIDEO_EXTENSIONS.size);
+
+      const covered = new Set(FORMAT_MATRIX.map((f) => f.ext));
+      const uncovered = [...VIDEO_EXTENSIONS].filter(
+        (ext) => !covered.has(ext) && !DOCUMENTED_EXCLUSIONS.has(ext),
+      );
+
+      expect(
+        uncovered,
+        'extensions in VIDEO_EXTENSIONS with no decode test and no documented exclusion',
+      ).toEqual([]);
+    });
+
+    it('has no matrix rows for containers the server would reject', () => {
+      const stray = FORMAT_MATRIX.map((f) => f.ext).filter((ext) => !VIDEO_EXTENSIONS.has(ext));
+      expect(stray, 'matrix rows for containers detectPlatform does not accept').toEqual([]);
+    });
+  });
+
+  /**
+   * Portrait/vertical source — the Reels/Stories shape, a documented primary
+   * use case with no decode coverage until now. Aspect handling is where a
+   * resize regression hides: capping a 1080x1920 source by WIDTH is a different
+   * branch from capping a landscape one, and the failure is silent (frames
+   * still come back, just wrong).
+   */
+  describe('portrait source', () => {
+    it('extracts frames and caps a vertical frame by width, not height', async () => {
+      const clip = await portraitClip();
+      const execute = captureToolExecute(registerAnalyzeVideo);
+
+      const result = await execute(
+        { url: clip, options: { detail: 'standard', maxFrames: 2, forceRefresh: true } },
+        noProgress,
+      );
+
+      expect(frameCountOf(result)).toBeGreaterThan(0);
+
+      // Default cap is 800px WIDE. A 1080x1920 source must come back 800 wide
+      // (1422 tall) — not 800 tall, and not passed through at 1080.
+      const widths = await imageWidths(result);
+      expect(widths.length).toBeGreaterThan(0);
+      for (const width of widths) {
+        expect(width).toBe(800);
+      }
+    });
+  });
+});
