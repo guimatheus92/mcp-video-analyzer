@@ -492,7 +492,8 @@ npm run test:e2e
 
 # Just the video-format matrix: a real clip per container/codec
 # (mp4/h264+hevc+av1, webm, mkv, mov, avi, m4v, mpeg, mpg, m2ts, mts,
-# 3gp, ogv, flv, wmv) decoded end to end. No network, ~15s.
+# 3gp, ogv, flv, wmv) decoded end to end. ~15s on a warm cache; the
+# first run fetches ~7MB of tesseract traineddata.
 npm run test:formats
 
 # Build + boot the real MCP server/CLI (seconds)

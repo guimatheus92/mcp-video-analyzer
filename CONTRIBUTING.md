@@ -43,7 +43,8 @@ npm run inspect
 npm run test              # Unit tests (fast, no network)
 npm run test:coverage     # Unit tests with coverage report
 npm run test:e2e          # E2E tests (requires network + yt-dlp/Chrome)
-npm run test:formats      # Just the video-format matrix (no network, ~15s)
+npm run test:formats      # Just the video-format matrix (~15s warm; one
+                          # ~7MB tesseract traineddata fetch on a cold cache)
 ```
 
 Tests live next to their source files: `foo.ts` → `foo.test.ts`.
@@ -51,6 +52,7 @@ Tests live next to their source files: `foo.ts` → `foo.test.ts`.
 Two e2e opt-ins/quirks:
 
 - `WHISPER_E2E=1 npm run test:e2e` also runs the transcription outcome test (needs a whisper CLI — `pip install -U openai-whisper` or `pipx install whisper-ctranslate2` + `WHISPER_BIN=whisper-ctranslate2`). With the flag set and no whisper installed the test **fails** by design; CI always runs it.
+- `BROWSER_E2E=1 npm run test:e2e` also runs the browser frame-extraction outcome test (needs Google Chrome installed — puppeteer-core resolves `channel: 'chrome'`). Same contract as `WHISPER_E2E`: flag set with no Chrome **fails**, it never skips. Without it the browser fallback ships unverified, because every failure inside `extractBrowserFrames` degrades to an empty array — a regression and "no frames" look identical.
 - On Linux, golden text clips need a drawtext-capable ffmpeg: `GOLDEN_FFMPEG=ffmpeg npm run test:e2e` (distro ffmpeg; the bundled `ffmpeg-static` Linux build lacks drawtext). Windows/macOS need nothing.
 
 ## Security checks

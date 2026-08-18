@@ -28,9 +28,9 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: github/codeql-action/init@v3
+      - uses: github/codeql-action/init@v4
         with:
           languages: javascript-typescript
           # `none` is the right build mode for javascript-typescript: CodeQL
@@ -43,6 +43,6 @@ jobs:
           # with URL- and env-derived arguments.
           queries: security-extended
 
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@v4
         with:
           category: /language:javascript-typescript

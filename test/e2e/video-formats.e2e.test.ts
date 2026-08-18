@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { clearAdapters, registerAdapter } from '../../src/adapters/adapter.interface.js';
 import { LocalFileAdapter } from '../../src/adapters/local-file.adapter.js';
@@ -37,10 +39,14 @@ import {
  * the golden OCR and transcription fixtures exist to satisfy (CLAUDE.md →
  * Testing conventions).
  *
- * No network and no drawtext — clips come from the bundled binary — so this
- * file needs neither `GOLDEN_FFMPEG` nor a runner with a distro ffmpeg. That is
- * why `npm run test:formats` also runs on the Windows CI job while the rest of
- * the e2e suite stays ubuntu-only.
+ * No drawtext — clips come from the bundled binary — so this file needs
+ * neither `GOLDEN_FFMPEG` nor a runner with a distro ffmpeg. It is not fully
+ * offline, though: `detail: 'standard'` always runs OCR
+ * (`DETAIL_CONFIGS.standard.includeOcr`), so tesseract.js fetches eng+por
+ * traineddata (~7MB) once on a cold `cachePath`. That single cacheable request
+ * to a stable endpoint is why `npm run test:formats` can also run on the
+ * Windows CI job (which caches tessdata), while the rest of the e2e suite —
+ * which downloads real third-party videos on every run — stays ubuntu-only.
  */
 describe('E2E: video format matrix (real ffmpeg decode)', () => {
   beforeAll(() => {
@@ -171,6 +177,40 @@ describe('E2E: video format matrix (real ffmpeg decode)', () => {
     it('has no matrix rows for containers the server would reject', () => {
       const stray = FORMAT_MATRIX.map((f) => f.ext).filter((ext) => !VIDEO_EXTENSIONS.has(ext));
       expect(stray, 'matrix rows for containers detectPlatform does not accept').toEqual([]);
+    });
+  });
+
+  /**
+   * Negative control. The matrix above claims "0 frames = FAIL"; this proves
+   * that claim can actually fire, by running the same assertions against a file
+   * that routes exactly like a real clip but cannot be decoded.
+   *
+   * The repo's own convention is that this proof belongs in the suite, not in a
+   * PR description — a guard verified once by hand drifts the moment the code
+   * under it changes.
+   */
+  describe('negative control', () => {
+    it('fails the matrix assertions for a routable but undecodable container', async () => {
+      const dir = await createTempDir('fmt-neg-');
+      try {
+        // Valid extension, garbage bytes: detectPlatform accepts it, so the
+        // routing assertion passes and only the DECODE assertions can catch it.
+        const bad = join(dir, 'undecodable.mp4');
+        await writeFile(bad, Buffer.alloc(4096, 0x41));
+        expect(detectPlatform(bad)).toBe('local');
+
+        // probeVideoDuration throws when ffmpeg cannot open the input, so the
+        // matrix's duration assertion is reached as an error, not a wrong pass.
+        await expect(probeVideoDuration(bad)).rejects.toThrow();
+
+        // And extraction yields nothing, so `frames.length > 0` would fail too.
+        const out = join(dir, 'frames');
+        await mkdir(out, { recursive: true });
+        const { frames } = await extractKeyFrames(bad, out, { maxFrames: 3 });
+        expect(frames.length, 'an undecodable file must not yield frames').toBe(0);
+      } finally {
+        await cleanupTempDir(dir);
+      }
     });
   });
 

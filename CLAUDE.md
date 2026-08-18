@@ -11,7 +11,7 @@ MCP server for video analysis — extracts transcripts, key frames, metadata, OC
 - `npm run test` — run unit tests (vitest)
 - `npm run test:watch` — run tests in watch mode
 - `npm run test:smoke` — build + verify MCP server starts and responds to initialize
-- `npm run test:formats` — just the video-format matrix (`test/e2e/video-formats.e2e.test.ts`); no network, ~15s
+- `npm run test:formats` — just the video-format matrix (`test/e2e/video-formats.e2e.test.ts`); ~15s on a warm cache. Clips are all generated locally, but `detail: 'standard'` always runs OCR, so tesseract.js fetches eng+por traineddata (~7MB) once on a cold `cachePath`.
 - `npm run security` — `npm audit` on shipped deps only (`--omit=dev`, fails at moderate+). The blocking tier.
 - `npm run security:all` — `npm audit` on the whole tree (fails at high+); dev-only moderates deliberately don't gate.
 - `npm run verify-package` — build + pack tarball + install in temp dir + verify startup (pre-publish)

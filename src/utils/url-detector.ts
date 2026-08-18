@@ -29,7 +29,12 @@ const YTDLP_PATTERNS: RegExp[] = [
 // test/e2e/video-formats.e2e.test.ts: every entry here must be either decoded
 // by that matrix or on its documented exclusion list, so adding an extension
 // forces a test decision instead of silently shipping an untested container.
-export const VIDEO_EXTENSIONS = new Set([
+// ReadonlySet, not Set: this allowlist gates which paths and URLs
+// detectPlatform accepts for processing, so an importer calling .add()/.clear()
+// would mutate a trust-boundary decision at runtime. Every consumer is
+// read-only already (.has / .size / spread), so this costs nothing and turns
+// the invariant into a compile-time guarantee.
+export const VIDEO_EXTENSIONS: ReadonlySet<string> = new Set([
   '.mp4',
   '.webm',
   '.mov',
