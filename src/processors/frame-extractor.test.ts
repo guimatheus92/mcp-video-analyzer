@@ -8,6 +8,7 @@ import {
   extractDenseFrames,
   extractFrameAt,
   extractKeyFrames,
+  ffmpegCrashReason,
   formatTimestamp,
   parseProbeFromStderr,
   parseSceneTimestamps,
@@ -350,4 +351,58 @@ describe('extractKeyFrames on a clip with known scene cuts (golden fixture)', ()
     // Golden-clip generation + real scene detection: two ffmpeg spawns, so the
     // 5s default flakes on a loaded machine.
   }, 20_000);
+});
+
+/**
+ * A signal-terminated ffmpeg crashed; it did not "find no frames". These two
+ * outcomes were indistinguishable before v0.9.0 — both arrive as a rejected
+ * promise and degrade to an empty result — which is how the bundled
+ * ffmpeg-static 7.0.2 LINUX build segfaulting on every MPEG-TS input (.mts /
+ * .m2ts, the standard AVCHD camcorder format) produced a silent zero-frame
+ * answer in the published Docker image. The byte-identical file parses fine on
+ * the Windows build, so it is the binary, not the file.
+ *
+ * These are pure-function tests so the contract is verified on EVERY platform,
+ * not only the one whose ffmpeg happens to be broken.
+ */
+describe('ffmpegCrashReason', () => {
+  it('names the signal and the container, actionably', () => {
+    const reason = ffmpegCrashReason({ code: null, signal: 'SIGSEGV' }, '/videos/camcorder.mts');
+    expect(reason).toContain('SIGSEGV');
+    expect(reason).toContain('.mts');
+    // Actionable, not just descriptive — the user needs a next step.
+    expect(reason).toMatch(/convert/i);
+  });
+
+  it('never leaks the ffmpeg command line (CLAUDE.md: surfaced failures are path-free)', () => {
+    // execFile attaches the full argv + ffmpeg banner to `message`; that is
+    // exactly what must NOT reach a warning.
+    const error = Object.assign(
+      new Error(
+        [
+          "Command failed: /app/node_modules/ffmpeg-static/ffmpeg -i /tmp/c.mts -vf select='gt(scene,0.1)' /tmp/o/%03d.jpg",
+          'ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/',
+        ].join('\n'),
+      ),
+      { code: null, signal: 'SIGSEGV' },
+    );
+    const reason = ffmpegCrashReason(error, '/tmp/c.mts');
+    expect(reason).not.toContain('-vf');
+    expect(reason).not.toContain('ffmpeg -i');
+    expect(reason).not.toContain('johnvansickle');
+  });
+
+  it('returns null for an ordinary non-zero exit, which callers already handle', () => {
+    // ffmpeg exits 1 on a successful bare probe, so treating every failure as a
+    // crash would relabel the most common path in this file as a segfault.
+    expect(ffmpegCrashReason({ code: 1, signal: null }, '/videos/clip.mp4')).toBeNull();
+    expect(ffmpegCrashReason(new Error('boom'), '/videos/clip.mp4')).toBeNull();
+    expect(ffmpegCrashReason(undefined, '/videos/clip.mp4')).toBeNull();
+  });
+
+  it('still reports a crash when the path has no extension', () => {
+    const reason = ffmpegCrashReason({ signal: 'SIGABRT' }, '/videos/no-extension');
+    expect(reason).toContain('SIGABRT');
+    expect(reason).toBeTruthy();
+  });
 });

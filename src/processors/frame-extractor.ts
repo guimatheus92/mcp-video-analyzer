@@ -1,7 +1,7 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { IFrameResult } from '../types.js';
 
@@ -41,6 +41,41 @@ export function formatTimestamp(seconds: number): string {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
+/**
+ * An ffmpeg that died on a SIGNAL crashed; it did not "find no frames".
+ *
+ * The distinction is invisible everywhere else in this pipeline, because both
+ * outcomes arrive as a rejected promise and degrade to an empty result. That
+ * matters concretely: the bundled `ffmpeg-static` 7.0.2 LINUX build segfaults
+ * in the MPEG-TS demuxer, so every `.mts`/`.m2ts` input — the standard AVCHD
+ * camcorder format — returns zero frames in the published Docker image. The
+ * identical bytes parse fine on the Windows build, so this is the binary, not
+ * the file. Without this message the user sees an empty result and no reason.
+ *
+ * Returns `null` for an ordinary non-zero exit, which callers already handle.
+ * The reason deliberately omits the command line (CLAUDE.md: a surfaced ffmpeg
+ * failure must be path-free) — `e.message` on a signal death is the full
+ * argv plus ffmpeg's banner.
+ */
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+export function ffmpegCrashReason(error: unknown, videoPath: string): string | null {
+  const signal =
+    error && typeof error === 'object' && 'signal' in error
+      ? (error as { signal?: string | null }).signal
+      : null;
+  if (!signal) return null;
+
+  const ext = extname(videoPath).toLowerCase() || 'this container';
+  return (
+    `ffmpeg crashed (${signal}) while reading ${ext} — the bundled ffmpeg binary ` +
+    `cannot demux this container on this platform. Convert the file to .mp4 or ` +
+    `.mkv and retry.`
+  );
+}
+
 export async function probeVideoDuration(videoPath: string): Promise<number> {
   try {
     const { stderr } = await execFile(ffmpegPath, ['-i', videoPath, '-f', 'null', '-'], {
@@ -54,6 +89,8 @@ export async function probeVideoDuration(videoPath: string): Promise<number> {
       const duration = parseDurationFromStderr(stderr);
       if (duration > 0) return duration;
     }
+    const crash = ffmpegCrashReason(error, videoPath);
+    if (crash) throw new Error(crash, { cause: error });
     throw new Error(`Failed to probe video duration: ${videoPath}`, { cause: error });
   }
 }
@@ -217,7 +254,7 @@ export async function extractSceneFrames(
       }
     }
 
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
     throw new Error(`Scene frame extraction failed: ${msg}`, { cause: error });
   }
 }
@@ -237,7 +274,7 @@ export async function extractFrameAt(
       { timeout: 30000 },
     );
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
     throw new Error(`Frame extraction at ${timestamp} failed: ${msg}`, { cause: error });
   }
 
@@ -329,7 +366,7 @@ export async function extractDenseFrames(
       { timeout: 180000 },
     );
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
+    const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
     throw new Error(`Dense frame extraction failed: ${msg}`, { cause: error });
   }
 
@@ -369,8 +406,16 @@ export async function extractKeyFrames(
   const { threshold, maxFrames, dense = false } = options;
   const warnings: string[] = [];
 
+  // A crashed ffmpeg reports itself; anything else keeps the original message.
+  // The inner extractors already prefix their own label, so don't add it twice.
+  const reason = (e: unknown) => ffmpegCrashReason(e, videoPath) ?? errorMessage(e);
+  const labelled = (label: string, e: unknown) => {
+    const msg = reason(e);
+    return msg.startsWith(label) ? msg : `${label}: ${msg}`;
+  };
+
   const dropToWarning = (label: string) => (e: unknown) => {
-    warnings.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+    warnings.push(labelled(label, e));
     return [] as IFrameResult[];
   };
 
@@ -384,7 +429,7 @@ export async function extractKeyFrames(
   let sceneErrored = false;
   let frames = await extractSceneFrames(videoPath, outputDir, { threshold, maxFrames }).catch(
     (e: unknown) => {
-      warnings.push(`Scene frame extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+      warnings.push(labelled('Scene frame extraction failed', e));
       sceneErrored = true;
       return [] as IFrameResult[];
     },

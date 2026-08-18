@@ -76,6 +76,34 @@ describe('E2E: video format matrix (real ffmpeg decode)', () => {
     vi.unstubAllEnvs();
   });
 
+  /**
+   * Does the BUNDLED binary crash on this container?
+   *
+   * The linux `ffmpeg-static` 7.0.2 build segfaults in the MPEG-TS demuxer:
+   * `.mts`/`.m2ts` (the standard AVCHD camcorder format) kill ffmpeg on probe,
+   * extract, and even remux, while the byte-identical file parses fine on the
+   * Windows build. That is a real defect in the published Docker image, not a
+   * test artifact — so this matrix neither skips those rows nor pretends
+   * frames come back.
+   *
+   * The capability is PROBED, never inferred from `process.platform`: the
+   * question is what this binary does, and a platform check is a guess about a
+   * binary rather than a fact about it. It would also silently stop being true
+   * the day ffmpeg-static ships a fixed build.
+   */
+  async function demuxerCrashes(clip: string): Promise<boolean> {
+    try {
+      await probeVideoDuration(clip);
+      return false;
+    } catch (e) {
+      // Only a SIGNAL death counts. Any other probe failure is a genuine bug
+      // and must propagate — this must not become a catch-all that turns real
+      // regressions into "known broken".
+      if (e instanceof Error && /crashed \(SIG/.test(e.message)) return true;
+      throw e;
+    }
+  }
+
   describe.each(FORMAT_MATRIX)('$ext ($videoCodec / $audioCodec)', (format) => {
     it('routes, probes, decodes frames, and exposes its audio track', async () => {
       const clip = await formatClip(format);
@@ -83,6 +111,28 @@ describe('E2E: video format matrix (real ffmpeg decode)', () => {
       // 1. The extension actually routes to a video source. A container listed
       //    in VIDEO_EXTENSIONS that detectPlatform rejects is unreachable.
       expect(detectPlatform(clip)).toBe('local');
+
+      if (await demuxerCrashes(clip)) {
+        // The contract for a container the bundled binary cannot read: the
+        // failure must be LEGIBLE. A zero-frame result with no explanation is
+        // still a failure here — that silent-empty outcome is the entire
+        // reason this file exists.
+        const dir = await createTempDir('fmt-crash-');
+        try {
+          const { frames, warnings } = await extractKeyFrames(clip, dir, { maxFrames: 3 });
+          expect(frames.length, `${format.ext} crashes the demuxer, so no frames`).toBe(0);
+          expect(
+            warnings.some((w) => /crashed \(SIG/.test(w)),
+            `${format.ext} must report the crash, not return an unexplained empty result. ` +
+              `Got: ${JSON.stringify(warnings)}`,
+          ).toBe(true);
+          // And it must not leak the ffmpeg command line (CLAUDE.md).
+          expect(warnings.some((w) => w.includes('-vf') || w.includes('ffmpeg -i'))).toBe(false);
+        } finally {
+          await cleanupTempDir(dir);
+        }
+        return;
+      }
 
       // 2. Duration parses out of ffmpeg's stderr for THIS container. asf,
       //    mpeg and flv print a different header shape than mp4, and
@@ -125,6 +175,19 @@ describe('E2E: video format matrix (real ffmpeg decode)', () => {
         { url: clip, options: { detail: 'standard', maxFrames: 2, forceRefresh: true } },
         noProgress,
       );
+
+      if (await demuxerCrashes(clip)) {
+        // Same contract at the tool surface: zero frames is acceptable ONLY
+        // when the tool says why. An MCP client that gets `frameCount: 0` and
+        // no warning cannot tell a crashed demuxer from an empty video.
+        expect(frameCountOf(result)).toBe(0);
+        expect(
+          warningsOf(result).some((w) => /crashed \(SIG/.test(w)),
+          `analyze_video must surface the crash for ${format.ext}. ` +
+            `Got: ${JSON.stringify(warningsOf(result))}`,
+        ).toBe(true);
+        return;
+      }
 
       // The processor assertion above proves ffmpeg can decode the file; this
       // proves the whole tool path does — adapter routing, the analysis
