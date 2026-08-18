@@ -13,8 +13,7 @@ let execHandler: (cmd: string, args: string[]) => Error | null = () => new Error
 vi.mock('node:child_process', () => ({
   execFile: (cmd: string, args: string[], _opts: unknown, cb?: (...args: unknown[]) => void) => {
     const callback = (typeof _opts === 'function' ? _opts : cb) as
-      | ((...args: unknown[]) => void)
-      | undefined;
+      ((...args: unknown[]) => void) | undefined;
     callback?.(execHandler(cmd, args), '', '');
   },
 }));

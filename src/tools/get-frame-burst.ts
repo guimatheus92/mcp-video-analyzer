@@ -104,8 +104,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
       });
       const withImages = async (paths: string[]) => {
         const content: (
-          | { type: 'text'; text: string }
-          | Awaited<ReturnType<typeof imageContent>>
+          { type: 'text'; text: string } | Awaited<ReturnType<typeof imageContent>>
         )[] = [doc(paths.length)];
         for (const path of paths) content.push(await imageContent({ path }));
         return { content };
