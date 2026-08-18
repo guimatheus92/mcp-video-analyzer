@@ -1,3 +1,5 @@
+[![MseeP.ai Security Assessment Badge](https://mseep.net/pr/guimatheus92-mcp-video-analyzer-badge.png)](https://mseep.ai/app/guimatheus92-mcp-video-analyzer)
+
 <p align="center">
   <img src="assets/icon.svg" width="88" height="88" alt="mcp-video-analyzer" />
 </p>
