@@ -3,8 +3,9 @@ name: video
 description: Analyze a video (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook, direct URL, or local file) — transcript, key frames, OCR text, metadata, annotated timeline — and answer questions about it with timestamps.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read, mcp__video-analyzer
-homepage: https://github.com/guimatheus92/mcp-video-analyzer
 license: MIT
+metadata:
+  homepage: https://github.com/guimatheus92/mcp-video-analyzer
 ---
 
 Analyze the given video and answer the user's question (or summarize it if no question was asked). Always cite timestamps (`M:SS`) in your answer.

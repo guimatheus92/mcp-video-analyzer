@@ -25,9 +25,10 @@ describe('VERSION', () => {
  * puppeteer-core@25, so an image that silently drifts back to an older base
  * tag would quietly undo a security fix while every other test stayed green.
  *
- * All seven are checked below. CLAUDE.md also states the floor but is
- * deliberately NOT guarded: it is maintainer-facing prose in `>=` form, not a
- * user-facing prerequisite, and pinning its wording would fight every edit.
+ * All seven are checked below. `.claude/skills/video-analyzer-dev/SKILL.md`
+ * also states the floor but is deliberately NOT guarded: it is
+ * maintainer-facing prose in `>=` form, not a user-facing prerequisite, and
+ * pinning its wording would fight every edit.
  */
 describe('Node floor', () => {
   it('has both Dockerfile stages on a base image that satisfies engines.node', async () => {

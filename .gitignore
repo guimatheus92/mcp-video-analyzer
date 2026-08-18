@@ -40,6 +40,7 @@ coverage/
 # Skilld references (recreated by `skilld install`)
 .skilld/
 
-# skilld dev-dependency skills — regenerated from .claude/skills/skilld-lock.yaml,
-# and kept out of git so `npx skills add` only discovers skills/video/
+# Locally generated dev skills (skilld) — machine-local, never part of the repo.
+# They carry no `metadata.internal` marker, so tracking them would expose them to
+# `npx skills add`; the project's own internal skill uses that marker instead.
 .claude/skills/*-skilld/
