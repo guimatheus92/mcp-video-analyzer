@@ -59,7 +59,26 @@ jobs:
       # so the golden text clips can't render with it. The distro ffmpeg is
       # used for CLIP GENERATION ONLY via GOLDEN_FFMPEG — every production
       # code path under test still runs the bundled binary.
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      #
+      # Bounded + retried because a GitHub runner's apt mirror does go
+      # unreachable: run 32166826435 sat in `apt-get update` for 44 minutes
+      # against an unresponsive azure.archive.ubuntu.com and was killed by the
+      # JOB timeout, so a mirror outage was indistinguishable from a hung test
+      # suite. Per-command `timeout` (not just `timeout-minutes`, which cannot
+      # interrupt-and-retry) turns that into a fast, legible failure.
+      - name: Install ffmpeg for golden-clip generation
+        timeout-minutes: 12
+        run: |
+          for attempt in 1 2 3; do
+            if timeout 150 sudo apt-get update               && timeout 210 sudo apt-get install -y --no-install-recommends ffmpeg; then
+              ffmpeg -version | head -n 1
+              exit 0
+            fi
+            echo "::warning::apt attempt $attempt failed or timed out; retrying in 15s"
+            sleep 15
+          done
+          echo "::error::apt-get failed after 3 attempts - the runner's package mirror is unreachable"
+          exit 1
       # Whisper CLI for the WHISPER_E2E transcription outcome test (issue #30).
       # whisper-ctranslate2 is the drop-in ctranslate2 CLI (no torch — installs
       # in seconds); pinned for the same reason yt-dlp is. The transcriber's
