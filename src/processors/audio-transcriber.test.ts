@@ -17,24 +17,48 @@ const execFile = promisify(execFileCb);
 const ffmpegPath: string = createRequire(import.meta.url)('ffmpeg-static') as string;
 
 describe('extractAudioTrack', () => {
-  it('throws for video without audio stream (tiny.mp4 has no audio)', async () => {
+  // These two used to assert `toThrow('Audio extraction failed')` — the prefix
+  // this module adds itself, which is true of ANY payload. Both conditions
+  // produced the same assertion, so neither could tell "no audio track" from
+  // "file is gone", and the 300-line ffmpeg dump that actually rode along
+  // (argv, build banner, absolute temp paths) was invisible to the suite for
+  // as long as it shipped. Assert the reason AND the absence of the dump.
+  const assertNoFfmpegDump = (message: string, ...paths: string[]) => {
+    expect(message.split('\n')).toHaveLength(1);
+    expect(message).not.toMatch(/-acodec|pcm_s16le|Stream #|ffmpeg version/i);
+    for (const path of paths) expect(message).not.toContain(path);
+  };
+
+  it('reports a video-only clip as having no audio track (tiny.mp4 has no audio)', async () => {
     const tempDir = await createTempDir();
     try {
-      // tiny.mp4 is video-only (no audio stream), so extraction should fail
-      await expect(extractAudioTrack(join(FIXTURES_DIR, 'tiny.mp4'), tempDir)).rejects.toThrow(
-        'Audio extraction failed',
-      );
+      const videoPath = join(FIXTURES_DIR, 'tiny.mp4');
+      const error = (await extractAudioTrack(videoPath, tempDir).then(
+        () => null,
+        (e: unknown) => e,
+      )) as Error | null;
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error?.message).toMatch(/no audio track/i);
+      assertNoFfmpegDump(error?.message ?? '', videoPath, tempDir);
+      // The raw error is still available for logs, just not for users.
+      expect(error?.cause).toBeDefined();
     } finally {
       await cleanupTempDir(tempDir);
     }
   });
 
-  it('throws for non-existent video file', async () => {
+  it('reports a missing video file without echoing its path', async () => {
     const tempDir = await createTempDir();
     try {
-      await expect(extractAudioTrack('/nonexistent/video.mp4', tempDir)).rejects.toThrow(
-        'Audio extraction failed',
-      );
+      const error = (await extractAudioTrack('/nonexistent/video.mp4', tempDir).then(
+        () => null,
+        (e: unknown) => e,
+      )) as Error | null;
+
+      expect(error).toBeInstanceOf(Error);
+      expect(error?.message).toMatch(/no longer on disk/i);
+      assertNoFfmpegDump(error?.message ?? '', '/nonexistent/video.mp4', tempDir);
     } finally {
       await cleanupTempDir(tempDir);
     }

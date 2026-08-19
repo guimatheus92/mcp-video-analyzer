@@ -5,12 +5,37 @@ import { basename, delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
 import { envFlag } from '../utils/env.js';
-import { formatTimestamp } from './frame-extractor.js';
+import { ffmpegCrashReason, formatTimestamp } from './frame-extractor.js';
 
 const execFile = promisify(execFileCb);
 
 const require = createRequire(import.meta.url);
 const ffmpegPath: string = require('ffmpeg-static') as string;
+
+/**
+ * One short, path-free sentence for a failed audio extraction.
+ *
+ * ffmpeg's own `e.message` is the full argv + build banner + demux dump —
+ * hundreds of lines carrying absolute local paths — and both callers stringify
+ * whatever this module throws straight into user-visible `warnings[]`, which
+ * also reaches the agent's context and any sidecar on disk. The frame side
+ * learned that in #26 (`ffmpegCrashReason`); the audio side never did, so a
+ * video-only clip answered with the entire command line. Translate here, once,
+ * where both callers route through. The raw error stays on `cause`.
+ */
+function audioExtractionReason(error: unknown, videoPath: string): string {
+  const crash = ffmpegCrashReason(error, videoPath);
+  if (crash) return crash;
+
+  const detail = error instanceof Error ? error.message : String(error);
+  // A video-only input gives ffmpeg nothing to write, so it fails on the
+  // OUTPUT file rather than reporting a missing input stream. That is content,
+  // not a fault: the silence gate says the same thing about a mute track.
+  if (/does not contain any stream/i.test(detail)) return 'This video has no audio track.';
+  if (/No such file or directory|ENOENT/i.test(detail))
+    return 'Audio extraction failed: the video file is no longer on disk.';
+  return 'Audio extraction failed: ffmpeg could not decode an audio track from this video.';
+}
 
 /**
  * Extract the audio track from a video file as a 16kHz mono WAV.
@@ -38,8 +63,7 @@ export async function extractAudioTrack(videoPath: string, outputDir: string): P
       { timeout: 120000 },
     );
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(`Audio extraction failed: ${msg}`, { cause: error });
+    throw new Error(audioExtractionReason(error, videoPath), { cause: error });
   }
 
   return outputPath;

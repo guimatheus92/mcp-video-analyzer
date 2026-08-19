@@ -150,7 +150,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
         await progress(40, 'Extracting frames via browser fallback...');
         const timestamps = generateTimestamps(metadata.duration, maxFrames);
         frames = await extractBrowserFrames(url, tempDir, { timestamps }).catch((e: unknown) => {
-          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.message : String(e)}`);
+          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.name : 'error'}`);
           return [];
         });
       }

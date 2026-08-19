@@ -453,7 +453,11 @@ async function runAnalysisPipeline(
           );
         }
       } catch (e: unknown) {
-        warnings.push(`Whisper fallback failed: ${e instanceof Error ? e.message : String(e)}`);
+        // extractAudioTrack already yields a complete, path-free sentence, and
+        // its commonest case is "no audio track" — content, not a fault, the
+        // same way the silence gate treats a mute track. Prefixing "failed"
+        // relabelled that as a breakage for every video-only clip.
+        warnings.push(e instanceof Error ? e.message : `Whisper fallback failed: ${String(e)}`);
       }
     }
 
