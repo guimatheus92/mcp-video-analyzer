@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { envInt } from '../utils/env.js';
+import { warningReason } from '../utils/warnings.js';
 
 const DEFAULT_MAX_WIDTH = 800;
 const DEFAULT_QUALITY = 70;
@@ -178,7 +179,7 @@ export async function optimizeFramesKeepingOriginals<T extends { filePath: strin
     outputDir,
     optimizeOptions,
   ).catch((e: unknown) => {
-    onWarning?.(`Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`);
+    onWarning?.(`Frame optimization failed: ${warningReason(e)}`);
     return frames.map((f) => f.filePath);
   });
 

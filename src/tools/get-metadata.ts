@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { getAdapter } from '../adapters/adapter.interface.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { isVideoSource } from '../utils/url-detector.js';
+import { warningReason } from '../utils/warnings.js';
 
 const GetMetadataSchema = z.object({
   url: z
@@ -52,7 +53,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       const [metadata, comments, chapters, aiSummary] = await Promise.all([
         adapter.getMetadata(url).catch((e: unknown) => {
-          warnings.push(`Failed to fetch metadata: ${e instanceof Error ? e.message : String(e)}`);
+          warnings.push(`Failed to fetch metadata: ${warningReason(e)}`);
           return {
             platform: adapter.name,
             title: 'Unknown',
@@ -62,14 +63,12 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
           };
         }),
         adapter.getComments(url).catch((e: unknown) => {
-          warnings.push(`Failed to fetch comments: ${e instanceof Error ? e.message : String(e)}`);
+          warnings.push(`Failed to fetch comments: ${warningReason(e)}`);
           return [];
         }),
         adapter.getChapters(url).catch(() => []),
         adapter.getAiSummary(url).catch((e: unknown) => {
-          warnings.push(
-            `Failed to fetch AI summary: ${e instanceof Error ? e.message : String(e)}`,
-          );
+          warnings.push(`Failed to fetch AI summary: ${warningReason(e)}`);
           return null;
         }),
       ]);

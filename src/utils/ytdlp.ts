@@ -3,6 +3,7 @@ import { readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { warningReason } from './warnings.js';
 
 const execFile = promisify(execFileCb);
 
@@ -171,8 +172,7 @@ async function pickDownloadedFile(
   } catch (e: unknown) {
     // The download succeeded; losing it here silently is issue #24's shape.
     onWarning?.(
-      `Download completed but the output directory could not be read: ` +
-        `${e instanceof Error ? e.message : String(e)}`,
+      `Download completed but the output directory could not be read: ${warningReason(e)}`,
     );
     return null;
   }

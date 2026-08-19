@@ -11,6 +11,7 @@ import type {
 } from '../types.js';
 import { detectPlatform, extractLoomId } from '../utils/url-detector.js';
 import { parseVtt } from '../utils/vtt-parser.js';
+import { warningReason } from '../utils/warnings.js';
 import { downloadViaYtDlp } from '../utils/ytdlp.js';
 import type { IVideoAdapter } from './adapter.interface.js';
 
@@ -251,7 +252,7 @@ export class LoomAdapter implements IVideoAdapter {
     // implementation existed.
     const viaYtDlp = await downloadViaYtDlp(url, destDir, (m) => reasons.push(m), 120000).catch(
       (e: unknown) => {
-        reasons.push(e instanceof Error ? e.message : String(e));
+        reasons.push(warningReason(e));
         return null;
       },
     );
@@ -275,7 +276,7 @@ export class LoomAdapter implements IVideoAdapter {
           reasons.push('Loom exposed no downloadable CDN URL (video may be private or deleted)');
         }
       } catch (e: unknown) {
-        reasons.push(`Loom CDN URL lookup failed: ${e instanceof Error ? e.message : String(e)}`);
+        reasons.push(`Loom CDN URL lookup failed: ${warningReason(e)}`);
       }
     }
 
@@ -302,7 +303,7 @@ export class LoomAdapter implements IVideoAdapter {
           reasons.push('Loom CDN returned an empty body');
         }
       } catch (e: unknown) {
-        reasons.push(`Loom CDN download failed: ${e instanceof Error ? e.message : String(e)}`);
+        reasons.push(`Loom CDN download failed: ${warningReason(e)}`);
       }
     }
 

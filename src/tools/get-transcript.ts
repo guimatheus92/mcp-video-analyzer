@@ -6,6 +6,7 @@ import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcri
 import { createProgressReporter } from '../utils/progress.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { isVideoSource } from '../utils/url-detector.js';
+import { warningReason } from '../utils/warnings.js';
 
 const GetTranscriptSchema = z.object({
   url: z
@@ -83,9 +84,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       // Try native transcript first
       let transcript = await adapter.getTranscript(url).catch((e: unknown) => {
-        warnings.push(
-          `Failed to fetch native transcript: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        warnings.push(`Failed to fetch native transcript: ${warningReason(e)}`);
         return [];
       });
 
@@ -122,8 +121,10 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
                 );
               }
             }
-          } catch {
-            // Whisper fallback failed — not critical
+          } catch (e: unknown) {
+            // Not critical — but silence here meant a caller with no transcript
+            // and no idea why. Say it, translated like every other emitter.
+            warnings.push(warningReason(e));
           } finally {
             if (tempDir) await cleanupTempDir(tempDir).catch(() => undefined);
           }

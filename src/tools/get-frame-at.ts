@@ -8,6 +8,7 @@ import { optimizeFrame } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir, getTempFilePath } from '../utils/temp-files.js';
 import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
+import { warningReason } from '../utils/warnings.js';
 import { maxWidthParam } from './frame-options.js';
 
 const GetFrameAtSchema = z.object({
@@ -116,9 +117,7 @@ Returns: A single image of the video frame at the specified timestamp.`,
             .catch((e: unknown) => {
               // Degraded but reported — a sharp/disk failure here means the
               // emitted frame ignores `maxWidth` and the caller should know.
-              warnings.push(
-                `Frame optimization failed: ${e instanceof Error ? e.message : String(e)}`,
-              );
+              warnings.push(`Frame optimization failed: ${warningReason(e)}`);
               return frame.filePath;
             });
 

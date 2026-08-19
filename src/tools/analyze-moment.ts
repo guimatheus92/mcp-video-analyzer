@@ -10,6 +10,7 @@ import { ocrSourceFrames, optimizeFramesKeepingOriginals } from '../processors/i
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource } from '../utils/url-detector.js';
+import { warningReason } from '../utils/warnings.js';
 import { maxWidthParam } from './frame-options.js';
 
 const AnalyzeMomentSchema = z.object({
@@ -95,7 +96,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
 
       // Fetch transcript and filter to time range
       const fullTranscript = await adapter.getTranscript(url).catch((e: unknown) => {
-        warnings.push(`Failed to fetch transcript: ${e instanceof Error ? e.message : String(e)}`);
+        warnings.push(`Failed to fetch transcript: ${warningReason(e)}`);
         return [];
       });
 
@@ -165,7 +166,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
         const pct = 75 + Math.round((completed / total) * 15);
         progress(pct, `OCR: processing frame ${completed}/${total}...`);
       }).catch((e: unknown) => {
-        warnings.push(`OCR failed: ${e instanceof Error ? e.message : String(e)}`);
+        warnings.push(`OCR failed: ${warningReason(e)}`);
         return [];
       });
 

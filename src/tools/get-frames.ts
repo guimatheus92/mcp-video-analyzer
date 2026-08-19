@@ -13,6 +13,7 @@ import { optimizeFramesKeepingOriginals } from '../processors/image-optimizer.js
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
+import { warningReason } from '../utils/warnings.js';
 import { maxWidthParam } from './frame-options.js';
 
 const GetFramesSchema = z.object({
@@ -96,9 +97,7 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
       // metadata error would skip it and mislabel the result as "install
       // yt-dlp" when the real cause was the metadata fetch.
       const metadata = await adapter.getMetadata(url).catch((e: unknown) => {
-        warnings.push(
-          `Could not fetch video metadata: ${e instanceof Error ? e.message : String(e)}`,
-        );
+        warnings.push(`Could not fetch video metadata: ${warningReason(e)}`);
         return {
           platform: adapter.name,
           title: 'Unknown',

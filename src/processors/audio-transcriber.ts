@@ -5,6 +5,7 @@ import { basename, delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
 import { envFlag } from '../utils/env.js';
+import { warningReason } from '../utils/warnings.js';
 import { ffmpegCrashReason, formatTimestamp } from './frame-extractor.js';
 
 const execFile = promisify(execFileCb);
@@ -361,7 +362,7 @@ async function transcribeWithWhisperCli(
       // if none resolve, the caller reports "no backend installed".
       if ((e as NodeJS.ErrnoException)?.code === 'ENOENT') continue;
       // Found but crashed/timed out — surface it (fixable, unlike not-installed).
-      onWarning?.(`Whisper CLI failed: ${e instanceof Error ? e.message : String(e)}`);
+      onWarning?.(`Whisper CLI failed: ${warningReason(e)}`);
       await rm(jsonPath, { force: true }).catch(() => undefined);
       return { status: 'failed' };
     }
@@ -439,7 +440,7 @@ async function transcribeWithOpenAiApi(
 
     return null;
   } catch (e: unknown) {
-    onWarning?.(`OpenAI transcription failed: ${e instanceof Error ? e.message : String(e)}`);
+    onWarning?.(`OpenAI transcription failed: ${warningReason(e)}`);
     return null;
   }
 }
