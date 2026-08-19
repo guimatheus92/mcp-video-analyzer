@@ -5,7 +5,7 @@
  *
  * Usage: npx tsx scripts/verify-package.ts
  */
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,7 +13,7 @@ import { join } from 'node:path';
 const rootDir = join(import.meta.dirname, '..');
 
 function run(cmd: string, cwd?: string): string {
-  console.log(`[verify] $ ${cmd}`);
+  console.log('[verify] $', cmd);
   return execSync(cmd, { cwd: cwd ?? rootDir, encoding: 'utf-8', timeout: 120000 });
 }
 
@@ -40,14 +40,18 @@ function main(): void {
 
     try {
       // Run for 3 seconds — if it doesn't crash, it's good
-      execSync(
-        `node -e "
-          import('file:///${entryPoint.replace(/\\/g, '/')}')
-            .then(() => { console.log('Import OK'); setTimeout(() => process.exit(0), 2000); })
-            .catch(e => { console.error(e); process.exit(1); })
-        "`,
-        { cwd: tempDir, encoding: 'utf-8', timeout: 15000 },
-      );
+      // execFileSync, not a shell: the interpolated path travels as its own
+      // argv entry, so it needs no quoting and can't be reparsed as syntax.
+      const bootScript = [
+        `import('file:///${entryPoint.replace(/\\/g, '/')}')`,
+        `  .then(() => { console.log('Import OK'); setTimeout(() => process.exit(0), 2000); })`,
+        `  .catch(e => { console.error(e); process.exit(1); })`,
+      ].join('\n');
+      execFileSync('node', ['-e', bootScript], {
+        cwd: tempDir,
+        encoding: 'utf-8',
+        timeout: 15000,
+      });
       console.log('[verify] PASS: Package installs and starts correctly');
     } catch (e: unknown) {
       const err = e as { stderr?: string; stdout?: string };

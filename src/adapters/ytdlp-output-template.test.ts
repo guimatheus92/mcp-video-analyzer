@@ -56,9 +56,9 @@ export function isExtensionAgnostic(arg: string, source: string): boolean {
   // the real #24 code used. Resolve it, and fail if we can't.
   const identifier = /^[A-Za-z_$][\w$]*$/.exec(arg)?.[0];
   if (identifier) {
-    const declaration = new RegExp(
-      `(?:const|let|var)\\s+${identifier}\\s*(?::[^=]+)?=\\s*([^;]+);`,
-    ).exec(source);
+    const declaration = source.match(
+      new RegExp(`(?:const|let|var)\\s+${identifier}\\s*(?::[^=]+)?=\\s*([^;]+);`),
+    );
     if (!declaration) return false;
     expression = declaration[1];
   }

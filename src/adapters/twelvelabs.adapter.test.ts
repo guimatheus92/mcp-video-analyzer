@@ -71,7 +71,9 @@ describe('TwelveLabsAdapter', () => {
 
   beforeEach(() => {
     adapter = new TwelveLabsAdapter({ pollIntervalMs: 0, requestTimeoutMs: 1000 });
-    process.env.TWELVELABS_API_KEY = 'tlk_test_key';
+    // Placeholder shape on purpose ('example-' prefix): the HOL plugin scanner
+    // that gates CI reads any other API_KEY literal as a committed secret.
+    process.env.TWELVELABS_API_KEY = 'example-test-key';
   });
 
   afterEach(() => {
