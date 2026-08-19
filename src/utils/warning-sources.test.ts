@@ -5,8 +5,17 @@ import { describe, expect, it } from 'vitest';
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Every call that puts a string in front of a user: `warnings[]` or an `onWarning` sink. */
-const EMITTER = /\b(?:warnings\.push|reasons\.push|onWarning\??\.?)\s*\(/g;
+/**
+ * Every call that puts a string in front of a user: a `warnings[]`-bound array
+ * or an `onWarning` sink.
+ *
+ * The prefix wildcard matters. `src/cli.ts` collects into `copyWarnings` and a
+ * local `errors`, both of which reach the public `warnings[]` through
+ * `assembleResultDoc({ extraWarnings })`. An exact-name list walked straight
+ * past them, so two absolute-path leaks sat outside the guard that exists to
+ * stop exactly that (issue #46).
+ */
+const EMITTER = /\b\w*(?:[Ww]arnings|[Ee]rrors|reasons)\.push\s*\(|\bonWarning\??\.?\s*\(/g;
 
 /** The translators that are allowed to produce a warning's reason. */
 const TRANSLATORS = ['warningReason(', 'extractYtDlpError(', 'ffmpegCrashReason('];
@@ -139,6 +148,18 @@ describe('rawErrorInWarnings', () => {
     [
       'issue #46, audio-transcriber.ts@0413f71 (whisper CLI, a spawned process)',
       'onWarning?.(`Whisper CLI failed: ${e instanceof Error ? e.message : String(e)}`);',
+    ],
+    [
+      'the pre-fix src/cli.ts frame-copy error, which the old exact-name EMITTER missed',
+      'errors.push(`Frame copy to ${dest} failed: ${err instanceof Error ? err.message : String(err)}`);',
+    ],
+    [
+      'the pre-fix src/cli.ts copy-failure warning, collected as copyWarnings',
+      [
+        'copyWarnings.push(',
+        '  `Frame images could not be copied to the output dir: ${err instanceof Error ? err.message : String(err)}`,',
+        ');',
+      ].join('\n'),
     ],
     [
       'a raw error passed with no template at all',

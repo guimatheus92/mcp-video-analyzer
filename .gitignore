@@ -44,3 +44,6 @@ coverage/
 # They carry no `metadata.internal` marker, so tracking them would expose them to
 # `npx skills add`; the project's own internal skill uses that marker instead.
 .claude/skills/*-skilld/
+
+# Generated test-clip cache (test/helpers/golden-clips.ts) — regenerable, never committed
+.cache/

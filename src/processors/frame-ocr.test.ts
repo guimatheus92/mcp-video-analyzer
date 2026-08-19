@@ -32,7 +32,16 @@ describe('isMeaningfulOcr', () => {
 describe('ocrFrames', () => {
   it('routes traineddata downloads to the per-user cache dir, never the process cwd', async () => {
     const results = await ocrFrames(
-      [{ time: '0:00', filePath: join(tmpdir(), 'nonexistent-frame.jpg'), mimeType: 'image/jpeg' }],
+      [
+        {
+          time: '0:00',
+          filePath: join(
+            tmpdir(),
+            'nonexistent-frame.jpg',
+          ) /* ALLOW_FIXED_TMPDIR: missing on purpose */,
+          mimeType: 'image/jpeg',
+        },
+      ],
       'eng',
     );
 

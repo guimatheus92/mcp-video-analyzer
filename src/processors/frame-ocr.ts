@@ -46,14 +46,25 @@ export async function ocrFrames(
   // MCP_OCR_PREPROCESS=0 to OCR the raw frames instead.
   const preprocess = process.env.MCP_OCR_PREPROCESS !== '0';
 
-  // Cache ~MB-sized .traineddata downloads in a stable temp dir — tesseract.js
+  // Cache ~MB-sized .traineddata downloads in the per-user cache dir (never
+  // os.tmpdir(), never the process cwd — see persistentCacheDir) — tesseract.js
   // defaults to the process cwd, which pollutes whatever directory the
   // server/CLI happens to run from (an agent's project root under npx).
   // A mkdir failure propagates: both callers catch it into an "OCR failed:"
   // warning, which beats a far-away traineddata write error (or a silent
   // fallback to cwd — the very bug this cachePath exists to fix).
   const cachePath = persistentCacheDir('tessdata');
-  await mkdir(cachePath, { recursive: true });
+  try {
+    await mkdir(cachePath, { recursive: true, mode: 0o700 });
+  } catch (e) {
+    // warningReason() scrubs absolute paths, so the raw errno reaches the user
+    // as "mkdir '<path>'" with no way to act on it. Name the override instead —
+    // a short, already-clean line passes through untouched.
+    throw new Error(
+      `Could not create the OCR cache directory (${(e as NodeJS.ErrnoException).code ?? 'unknown'}). Set MCP_CACHE_DIR to a writable absolute path.`,
+      { cause: e },
+    );
+  }
   const worker = await Tesseract.createWorker(language, undefined, { cachePath });
 
   try {

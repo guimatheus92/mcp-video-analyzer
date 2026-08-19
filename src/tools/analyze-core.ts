@@ -535,12 +535,17 @@ export async function getAnalysis(
   );
   cache.set(key, result);
 
-  const { written, failed } = await writeAnalysisSidecars(url, result, keyParams, {
+  const { written, failed, reason } = await writeAnalysisSidecars(url, result, keyParams, {
     transcriptFromWhisper,
   });
   if (failed) {
+    // Partial success is the common shape: the .vtt is written last, so the
+    // authoritative .analysis.json is usually already on disk. Telling the user
+    // nothing was persisted would send them to recompute for no reason.
     result.warnings.push(
-      'Sidecar persistence failed (MCP_WRITE_SIDECARS) — results were NOT written to disk; a re-run will recompute.',
+      written.length > 0
+        ? `Sidecar persistence incomplete (MCP_WRITE_SIDECARS): ${written.length} artifact(s) written, then ${reason}.`
+        : `Sidecar persistence failed (MCP_WRITE_SIDECARS): ${reason} — results were NOT written to disk; a re-run will recompute.`,
     );
   } else if (written.length > 0) {
     result.warnings.push(

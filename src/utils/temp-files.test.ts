@@ -1,13 +1,21 @@
 import { existsSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import type * as NodeOs from 'node:os';
+import { homedir, tmpdir } from 'node:os';
 import { isAbsolute, join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   cleanupTempDir,
   createTempDir,
   getTempFilePath,
   persistentCacheDir,
 } from './temp-files.js';
+
+// cacheRoot() branches on homedir() + process.platform + env; stub all three so
+// every branch is covered on every host instead of only the runner's own.
+vi.mock('node:os', async (importOriginal) => ({
+  ...(await importOriginal<typeof NodeOs>()),
+  homedir: vi.fn(() => '/home/u'),
+}));
 
 const dirsToClean: string[] = [];
 
@@ -55,17 +63,101 @@ describe('cleanupTempDir', () => {
 });
 
 describe('persistentCacheDir', () => {
-  it('stays out of the shared os temp dir', () => {
-    // A fixed name under os.tmpdir() is pre-creatable by any other local user,
-    // who then reads the frames we copy there and can plant a .traineddata for
-    // tesseract (CodeQL js/insecure-temporary-file). On Windows LOCALAPPDATA is
-    // the PARENT of tmpdir(), so this is a true negative there too. Failing here
-    // in a container means the no-home fallback kicked in — which is the alert.
-    const dir = persistentCacheDir('tessdata');
+  // cacheRoot() has more branches than any one host executes: CI is ubuntu +
+  // windows, so the darwin branch would otherwise run on ZERO machines, and the
+  // security-relevant no-home fallback on none at all. Stub the inputs instead
+  // of asserting a property of whichever branch the runner happened to pick —
+  // the previous ambient assertion also went red in any HOME-less container,
+  // for a fallback temp-files.ts documents as deliberate.
+  const realPlatform = process.platform;
+  const setPlatform = (value: string) =>
+    Object.defineProperty(process, 'platform', { value, configurable: true });
 
-    expect(isAbsolute(dir)).toBe(true);
-    expect(dir).toContain('mcp-video-analyzer');
-    expect(dir.startsWith(tmpdir())).toBe(false);
+  afterEach(() => {
+    setPlatform(realPlatform);
+    vi.unstubAllEnvs();
+    vi.mocked(homedir).mockReturnValue('/home/u');
+  });
+
+  it.each([
+    ['linux', '/home/u', join('/home/u', '.cache')],
+    ['darwin', '/Users/u', join('/Users/u', 'Library', 'Caches')],
+    ['win32', '/home/u', join('/home/u', 'AppData', 'Local')],
+  ])('resolves the per-user cache dir on %s', (platform, home, expectedRoot) => {
+    setPlatform(platform);
+    vi.mocked(homedir).mockReturnValue(home);
+    vi.stubEnv('MCP_CACHE_DIR', '');
+    vi.stubEnv('XDG_CACHE_HOME', '');
+    vi.stubEnv('LOCALAPPDATA', '');
+
+    expect(persistentCacheDir('tessdata')).toBe(
+      join(expectedRoot, 'mcp-video-analyzer', 'tessdata'),
+    );
+  });
+
+  it('honours an absolute MCP_CACHE_DIR over everything else', () => {
+    setPlatform('linux');
+    vi.stubEnv('MCP_CACHE_DIR', '/opt/cache');
+    vi.stubEnv('XDG_CACHE_HOME', '/xdg');
+    expect(persistentCacheDir('tessdata')).toBe(
+      join('/opt/cache', 'mcp-video-analyzer', 'tessdata'),
+    );
+  });
+
+  it('honours an absolute XDG_CACHE_HOME on linux', () => {
+    setPlatform('linux');
+    vi.stubEnv('MCP_CACHE_DIR', '');
+    vi.stubEnv('XDG_CACHE_HOME', '/xdg');
+    expect(persistentCacheDir('tessdata')).toBe(join('/xdg', 'mcp-video-analyzer', 'tessdata'));
+  });
+
+  it.each(['MCP_CACHE_DIR', 'XDG_CACHE_HOME'])(
+    'ignores a relative %s rather than resolving it against the cwd',
+    (name) => {
+      // The XDG spec requires a non-absolute value to be ignored, and a relative
+      // root would put tessdata + frames under whatever dir the CLI was launched
+      // from — the npx-pollutes-the-project-dir bug cachePath exists to prevent.
+      setPlatform('linux');
+      vi.stubEnv('MCP_CACHE_DIR', '');
+      vi.stubEnv('XDG_CACHE_HOME', '');
+      vi.stubEnv(name, '.cache');
+
+      const dir = persistentCacheDir('tessdata');
+      expect(isAbsolute(dir)).toBe(true);
+      expect(dir).toBe(join('/home/u', '.cache', 'mcp-video-analyzer', 'tessdata'));
+    },
+  );
+
+  it.each([
+    ['an empty home', ''],
+    ['a home of "/"', '/'],
+  ])('falls back to a uid-keyed temp dir for %s', (_label, home) => {
+    // Deliberate last resort, pinned so nobody "fixes" it into a cwd write or a
+    // throw. It is uid-keyed rather than a fixed name so two users on one host
+    // cannot collide — MCP_CACHE_DIR is the documented way out.
+    setPlatform('linux');
+    vi.stubEnv('MCP_CACHE_DIR', '');
+    vi.stubEnv('XDG_CACHE_HOME', '');
+    vi.mocked(homedir).mockReturnValue(home);
+
+    const dir = persistentCacheDir('tessdata');
+    expect(dir.startsWith(tmpdir())).toBe(true);
+    expect(dir).toContain('mcp-cache-u');
+  });
+
+  it('survives homedir() throwing, which is what it does with no passwd entry', () => {
+    // os.homedir() raises ERR_SYSTEM_ERROR rather than returning '' when $HOME
+    // is unset and the uid has no passwd entry — the exact container shape the
+    // fallback is for, so it must not escape as an exception.
+    setPlatform('linux');
+    vi.stubEnv('MCP_CACHE_DIR', '');
+    vi.stubEnv('XDG_CACHE_HOME', '');
+    vi.mocked(homedir).mockImplementation(() => {
+      throw new Error('ERR_SYSTEM_ERROR: uv_os_homedir returned ENOENT');
+    });
+
+    expect(() => persistentCacheDir('tessdata')).not.toThrow();
+    expect(persistentCacheDir('tessdata')).toContain('mcp-cache-u');
   });
 
   it('appends segments under one shared root', () => {

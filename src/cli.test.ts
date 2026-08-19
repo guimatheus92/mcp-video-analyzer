@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdir, mkdtemp, rm, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -7,6 +8,7 @@ import { copyFrames, defaultOutDir, parseCliArgs, runCli } from './cli.js';
 import { getAnalysis } from './tools/analyze-core.js';
 import type * as analyzeCore from './tools/analyze-core.js';
 import type { IAnalysisResult, IFrameResult } from './types.js';
+import { persistentCacheDir } from './utils/temp-files.js';
 
 vi.mock('./tools/analyze-core.js', async (importOriginal) => {
   const actual = await importOriginal<typeof analyzeCore>();
@@ -93,6 +95,22 @@ describe('parseCliArgs', () => {
 });
 
 describe('defaultOutDir', () => {
+  it('keeps the default out dir out of the shared temp dir', () => {
+    // The sink the CodeQL fix was about: frames of the user's video. The old
+    // test asserted only determinism and `toContain('mcp-video-analyzer')`,
+    // both of which were equally true of the vulnerable
+    // `join(tmpdir(), 'mcp-video-analyzer', hash)` — so it guarded nothing.
+    const url = 'https://example.com/a.mp4';
+    const dir = defaultOutDir(url);
+
+    // Routes through the one shared definition (no divergent second copy)...
+    expect(dir).toBe(
+      persistentCacheDir(createHash('sha256').update(url).digest('hex').slice(0, 12)),
+    );
+    // ...and, asserted independently of that helper, is not under shared tmp.
+    expect(dir.startsWith(tmpdir())).toBe(false);
+  });
+
   it('is stable for the same source and distinct across sources', () => {
     const a = defaultOutDir('https://example.com/a.mp4');
     expect(defaultOutDir('https://example.com/a.mp4')).toBe(a);
@@ -163,7 +181,14 @@ describe('copyFrames', () => {
     expect(frames).toEqual([]);
     expect(missing).toBe(0);
     expect(errors).toHaveLength(1);
-    expect(errors[0]).toContain('Frame copy to');
+    expect(errors[0]).toContain('Frame copy failed');
+    // Names WHICH frame (a basename is safe) but leaks no absolute path: these
+    // errors reach the public warnings[] through assembleResultDoc, so they owe
+    // the same path-free contract as every other emitter (issue #46).
+    expect(errors[0]).toContain('frame_0001.jpg');
+    expect(errors[0]).not.toContain(outDir);
+    expect(errors[0]).not.toContain(srcDir);
+    expect(errors[0].split('\n')).toHaveLength(1);
     expect(errors[0]).not.toContain('force-refresh');
   });
 });
@@ -206,7 +231,12 @@ describe('runCli', () => {
     const streams = captureStreams();
     vi.mocked(getAnalysis).mockRejectedValueOnce(new Error('pipeline exploded'));
 
-    const code = await runCli([join(tmpdir(), 'whatever.mp4')]);
+    const code = await runCli([
+      join(
+        tmpdir(),
+        'whatever.mp4',
+      ) /* ALLOW_FIXED_TMPDIR: nonexistent input path, never written */,
+    ]);
 
     expect(code).toBe(1);
     expect(streams.stdout()).toBe('');
@@ -225,7 +255,14 @@ describe('runCli', () => {
     // An --out whose parent is a FILE makes copyFrames' mkdir reject.
     const bogusOut = join(framePath, 'sub');
 
-    const code = await runCli([join(tmpdir(), 'whatever.mp4'), '--out', bogusOut]);
+    const code = await runCli([
+      join(
+        tmpdir(),
+        'whatever.mp4',
+      ) /* ALLOW_FIXED_TMPDIR: nonexistent input path, never written */,
+      '--out',
+      bogusOut,
+    ]);
 
     expect(code).toBe(0);
     expect(cleanup).toHaveBeenCalled();
@@ -249,7 +286,10 @@ describe('runCli', () => {
     });
 
     const code = await runCli([
-      join(tmpdir(), 'whatever.mp4'),
+      join(
+        tmpdir(),
+        'whatever.mp4',
+      ) /* ALLOW_FIXED_TMPDIR: nonexistent input path, never written */,
       '--out',
       join(await makeTempDir(), 'frames'),
     ]);

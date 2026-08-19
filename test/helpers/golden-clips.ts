@@ -2,8 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { FIXTURES_DIR } from './fixtures.js';
+import { FIXTURES_DIR, REPO_ROOT } from './fixtures.js';
 import { runFfmpeg } from './tools.js';
 
 /**
@@ -38,12 +37,13 @@ import { runFfmpeg } from './tools.js';
 // Repo-local, NOT os.tmpdir(): a fixed name under the shared temp dir is
 // pre-creatable by any other local user, and CodeQL followed the taint from
 // here through the e2e tests into the sidecar writes in analysis-sidecar.ts
-// (js/insecure-temporary-file). node_modules is already gitignored and lives
-// and dies with this checkout — the right lifetime for clips rendered by this
-// checkout's ffmpeg. Cost of the move: `npm ci` drops the cache and one run
-// regenerates it. CI never had a warm cache anyway (ephemeral tmpdirs).
-const REPO_ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..');
-const GOLDEN_DIR = join(REPO_ROOT, 'node_modules', '.cache', 'mcp-video-analyzer-golden');
+// (js/insecure-temporary-file).
+//
+// `.cache/` rather than `node_modules/.cache/`: CI restores the actions/cache
+// entry BEFORE `npm ci`, and `npm ci` wipes node_modules wholesale, so a cache
+// living in there would be deleted before a single test ran. This path is
+// gitignored and survives an install.
+const GOLDEN_DIR = join(REPO_ROOT, '.cache', 'golden-clips');
 
 /** Static header line, present on every dense-UI frame. */
 export const DENSE_UI_HEADER = 'ORDERS DASHBOARD 2026';

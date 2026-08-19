@@ -112,7 +112,7 @@ The same engine is exposed as a one-shot command — this is what the `video` sk
 npx -y mcp-video-analyzer@latest analyze "https://youtu.be/jNQXAC9IVRw"
 ```
 
-stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath, mimeType }` entries pointing at JPEG key frames copied to `--out` (default: the per-user cache dir — `%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux — under `mcp-video-analyzer/<url-hash>/`). Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
+stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath, mimeType }` entries pointing at JPEG key frames copied to `--out` (default: the per-user cache dir — `%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux — under `mcp-video-analyzer/<url-hash>/`; set `MCP_CACHE_DIR` to an absolute path to relocate it). Unlike the temp dir this used to live in, nothing reaps that location, so frames persist until you delete them — the directories are created `0700`. Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
 
 | Flag | Description |
 |------|-------------|
@@ -425,6 +425,7 @@ Native frames cost several times more context than the default, so raise the cap
 |---|---|---|---|
 | `MCP_FRAME_MAX_WIDTH` | Emitted frame width, in px | `800` | `0` (or `native`/`full`/`original`) disables the cap. A per-call `maxWidth` wins over it |
 | `MCP_FRAME_JPEG_QUALITY` | Emitted frame JPEG quality | `70` | Raise it when thin glyphs matter; env only, there is no per-call quality parameter. Values outside 1–100 fall back |
+| `MCP_CACHE_DIR` | Root for the tessdata cache and the CLI's default `--out` | per-user cache dir | Absolute paths only (a relative value is ignored). Use it when `$HOME` is read-only or absent — a hardened container, `ProtectHome=`, a quota'd home. The published Docker image sets it to `/tmp/mcp-video-analyzer-cache` so `--read-only --tmpfs /tmp` works out of the box |
 
 A value either variable can't use — `1e3`, `1920px`, a quality of `150` — is rejected with a one-time warning on stderr and the default applies. It is not silently accepted: the whole point of the setting is to escape a downscale that otherwise looks like a normal result.
 

@@ -15,6 +15,7 @@ import type { AnalyzeOptions, ProgressReporter } from './tools/analyze-core.js';
 import type { IFrameResult } from './types.js';
 import { persistentCacheDir } from './utils/temp-files.js';
 import { isVideoSource } from './utils/url-detector.js';
+import { warningReason } from './utils/warnings.js';
 
 const CLI_USAGE = `Usage: mcp-video-analyzer analyze <url-or-path> [options]
 
@@ -38,8 +39,11 @@ Options:
   --ocr-language <codes>  Tesseract OCR languages (default: eng+por)
   --model <name>          Whisper model override (e.g. small, medium)
   --language <code>       Forced transcription language (e.g. pt)
-  --out <dir>             Where to copy frame images
-                          (default: <tmp>/mcp-video-analyzer/<url-hash>)
+  --out <dir>             Where to copy frame images (default: the per-user
+                          cache dir — %LOCALAPPDATA% / ~/Library/Caches /
+                          $XDG_CACHE_HOME — under mcp-video-analyzer/<url-hash>;
+                          override the root with MCP_CACHE_DIR). Frames there
+                          persist until deleted; nothing reaps this location.
   -h, --help              Show this help
 
 Sources: Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch,
@@ -119,7 +123,10 @@ export async function copyFrames(
   frames: IFrameResult[],
   outDir: string,
 ): Promise<{ frames: IFrameResult[]; missing: number; errors: string[] }> {
-  await mkdir(outDir, { recursive: true });
+  // 0700: the default out dir accumulates frames of every analyzed video and
+  // nothing reaps it, so keep the pile unreadable to other local users. Applies
+  // only to directories this call creates; a no-op on Windows.
+  await mkdir(outDir, { recursive: true, mode: 0o700 });
   const copied: IFrameResult[] = [];
   let missing = 0;
   const errors: string[] = [];
@@ -132,9 +139,9 @@ export async function copyFrames(
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
         missing++;
       } else {
-        errors.push(
-          `Frame copy to ${dest} failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        // Reaches the public warnings[] via assembleResultDoc, so it owes the
+        // same contract: one clean line, no absolute paths, no raw errno text.
+        errors.push(`Frame copy failed for ${basename(dest)}: ${warningReason(err)}`);
       }
     }
   }
@@ -213,8 +220,12 @@ export async function runCli(argv: string[]): Promise<number> {
     // A failed mkdir/copy (bad --out, permissions) must not discard an
     // analysis that already succeeded — degrade into warnings[] and emit the
     // document without frame files (graceful-degradation convention).
+    // The default out dir is now home-derived, so EACCES/EROFS/EDQUOT are
+    // ordinary outcomes rather than only-if-you-passed-a-bad---out. Name the
+    // way out, the way extractYtDlpError names the cookie env vars.
     copyWarnings.push(
-      `Frame images could not be copied to the output dir: ${err instanceof Error ? err.message : String(err)}`,
+      `Frame images could not be copied to the output dir: ${warningReason(err)}. ` +
+        `Set --out or MCP_CACHE_DIR to a writable absolute path.`,
     );
   } finally {
     // Always reclaim the per-call temp dir, even when the copy failed.

@@ -29,4 +29,13 @@ RUN npm ci --omit=dev --ignore-scripts && npm rebuild ffmpeg-static
 
 COPY --from=build /app/dist/ ./dist/
 
+# The tessdata cache and the CLI's default --out resolve to the per-user cache
+# dir (persistentCacheDir), i.e. /root/.cache here. That is NOT writable under
+# the standard MCP hardening recipe `docker run --read-only --tmpfs /tmp`,
+# which would silently cost every OCR result and every emitted frame. Pin the
+# cache at the one path that recipe leaves writable. A fixed name under /tmp is
+# safe here in a way it is not on a shared host: the container is single-uid by
+# construction, and this is an explicit image decision rather than a default.
+ENV MCP_CACHE_DIR=/tmp/mcp-video-analyzer-cache
+
 ENTRYPOINT ["node", "dist/index.js"]

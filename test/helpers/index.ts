@@ -1,5 +1,5 @@
 export { createTestImage } from './images.js';
-export { FIXTURES_DIR } from './fixtures.js';
+export { FIXTURES_DIR, REPO_ROOT } from './fixtures.js';
 export {
   BIG_TEXT_LINES,
   DENSE_UI_HEADER,
