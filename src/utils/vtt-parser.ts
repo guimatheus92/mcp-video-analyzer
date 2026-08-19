@@ -84,7 +84,18 @@ function buildEntry(
     text = joinedText;
   }
 
-  text = text.replace(HTML_TAGS, '').trim();
+  // Strip to a fixed point. The [<>] branch already guarantees no bracket
+  // survives a single pass, so the second iteration is a confirmation rather
+  // than work — but feeding the result back into the receiver is the shape
+  // CodeQL js/incomplete-multi-character-sanitization requires (it flags any
+  // regex that can match `<script...>`, alternation branches included), and
+  // it keeps this correct if the bracket branch is ever narrowed.
+  let previous: string;
+  do {
+    previous = text;
+    text = text.replace(HTML_TAGS, '');
+  } while (text !== previous);
+  text = text.trim();
 
   const entry: ITranscriptEntry = {
     time: formatTimestamp(startTimestamp),
