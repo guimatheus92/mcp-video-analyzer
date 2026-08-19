@@ -2,7 +2,12 @@ import type { ITranscriptEntry } from '../types.js';
 
 const TIMESTAMP_LINE = /^(\d{2}:\d{2}:\d{2}\.\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}\.\d{3})/;
 const SPEAKER_TAG = /^<v\s+([^>]+)>(.*)<\/v>$/s;
-const HTML_TAGS = /<[^>]+>/g;
+// A tag only matches with its closing '>', so a single pass leaves an
+// unterminated `<script src=x` fully intact (CodeQL
+// js/incomplete-multi-character-sanitization). The alternation drops any
+// leftover angle bracket too: WebVTT cue text must escape a literal '<' as
+// &lt; per spec, so no valid cue content is lost.
+const HTML_TAGS = /<[^>]*>|[<>]/g;
 const SEQUENCE_NUMBER = /^\d+$/;
 
 export function parseVtt(vttContent: string): ITranscriptEntry[] {

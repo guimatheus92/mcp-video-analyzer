@@ -1,7 +1,13 @@
 import { existsSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { isAbsolute, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { cleanupTempDir, createTempDir, getTempFilePath } from './temp-files.js';
+import {
+  cleanupTempDir,
+  createTempDir,
+  getTempFilePath,
+  persistentCacheDir,
+} from './temp-files.js';
 
 const dirsToClean: string[] = [];
 
@@ -45,6 +51,25 @@ describe('cleanupTempDir', () => {
     const dir = await createTempDir();
     await cleanupTempDir(dir);
     await expect(cleanupTempDir(dir)).resolves.toBeUndefined();
+  });
+});
+
+describe('persistentCacheDir', () => {
+  it('stays out of the shared os temp dir', () => {
+    // A fixed name under os.tmpdir() is pre-creatable by any other local user,
+    // who then reads the frames we copy there and can plant a .traineddata for
+    // tesseract (CodeQL js/insecure-temporary-file). On Windows LOCALAPPDATA is
+    // the PARENT of tmpdir(), so this is a true negative there too. Failing here
+    // in a container means the no-home fallback kicked in — which is the alert.
+    const dir = persistentCacheDir('tessdata');
+
+    expect(isAbsolute(dir)).toBe(true);
+    expect(dir).toContain('mcp-video-analyzer');
+    expect(dir.startsWith(tmpdir())).toBe(false);
+  });
+
+  it('appends segments under one shared root', () => {
+    expect(persistentCacheDir('a', 'b')).toBe(join(persistentCacheDir('a'), 'b'));
   });
 });
 

@@ -203,9 +203,20 @@ export async function writeAnalysisSidecars(
     // already on disk.
     if (opts.transcriptFromWhisper && result.transcript.length > 0) {
       const vtt = vttPath(videoPath);
-      if (!existsSync(vtt)) {
-        await writeFile(vtt, transcriptToVtt(result.transcript), 'utf8');
+      try {
+        // 'wx' = create-exclusive. An external transcription pipeline shares
+        // this directory with us by design (see the file header), so a .vtt can
+        // appear between a check and a write — let the filesystem decide, in one
+        // atomic step (CodeQL js/file-system-race).
+        await writeFile(vtt, transcriptToVtt(result.transcript), {
+          encoding: 'utf8',
+          flag: 'wx',
+        });
         written.push(vtt);
+      } catch (e) {
+        // A .vtt that already exists is the documented no-op, not a failed
+        // write; only a real error reaches the outer catch and sets failed.
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e;
       }
     }
   } catch {

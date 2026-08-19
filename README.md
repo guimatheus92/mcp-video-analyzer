@@ -112,7 +112,7 @@ The same engine is exposed as a one-shot command — this is what the `video` sk
 npx -y mcp-video-analyzer@latest analyze "https://youtu.be/jNQXAC9IVRw"
 ```
 
-stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath, mimeType }` entries pointing at JPEG key frames copied to `--out` (default: `<tmp>/mcp-video-analyzer/<url-hash>/`). Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
+stdout is a single JSON document — `metadata`, `transcript`, `ocrResults`, `timeline`, `warnings`, `frameCount`, and `frames` as `{ time, filePath, mimeType }` entries pointing at JPEG key frames copied to `--out` (default: the per-user cache dir — `%LOCALAPPDATA%` on Windows, `~/Library/Caches` on macOS, `$XDG_CACHE_HOME` or `~/.cache` on Linux — under `mcp-video-analyzer/<url-hash>/`). Progress streams on stderr, so `stdout` can be piped straight into a JSON parser. Partial failures land in `warnings` with exit code 0; only hard failures exit 1.
 
 | Flag | Description |
 |------|-------------|

@@ -59,6 +59,19 @@ This is <b>bold</b> and <i>italic</i> text`;
     expect(entries[0].text).toBe('This is bold and italic text');
   });
 
+  it('strips an unterminated tag, which has no closing > to match', () => {
+    // The regression the CodeQL alert named: /<[^>]+>/g needs the closing '>',
+    // so "<script src=x" used to survive the strip completely.
+    const vtt = `WEBVTT
+
+00:00:01.000 --> 00:00:05.000
+before <script src=x after`;
+
+    const entries = parseVtt(vtt);
+    expect(entries[0].text).toBe('before script src=x after');
+    expect(entries[0].text).not.toContain('<');
+  });
+
   it('returns empty array for empty VTT (header only)', () => {
     const entries = parseVtt('WEBVTT\n\n');
     expect(entries).toEqual([]);

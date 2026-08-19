@@ -1,6 +1,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
+import { persistentCacheDir } from '../utils/temp-files.js';
 import { isMeaningfulOcr, ocrFrames } from './frame-ocr.js';
 
 const createWorker = vi.hoisted(() =>
@@ -29,15 +30,24 @@ describe('isMeaningfulOcr', () => {
 });
 
 describe('ocrFrames', () => {
-  it('routes traineddata downloads to the tmp cache dir, never the process cwd', async () => {
+  it('routes traineddata downloads to the per-user cache dir, never the process cwd', async () => {
     const results = await ocrFrames(
       [{ time: '0:00', filePath: join(tmpdir(), 'nonexistent-frame.jpg'), mimeType: 'image/jpeg' }],
       'eng',
     );
 
     expect(results).toHaveLength(1);
+    // Routing invariant: the one shared definition, not a second inlined path.
     expect(createWorker).toHaveBeenCalledWith('eng', undefined, {
-      cachePath: join(tmpdir(), 'mcp-video-analyzer', 'tessdata'),
+      cachePath: persistentCacheDir('tessdata'),
     });
+
+    // Asserted independently of that helper, so this still fails if the helper
+    // itself regresses: not the cwd (the bug cachePath exists to fix), and not
+    // a predictable name in the SHARED temp dir, where any other local user
+    // could plant a poisoned .traineddata (CodeQL js/insecure-temporary-file).
+    const { cachePath } = createWorker.mock.calls[0][2] as { cachePath: string };
+    expect(cachePath.startsWith(process.cwd())).toBe(false);
+    expect(cachePath.startsWith(tmpdir())).toBe(false);
   });
 });

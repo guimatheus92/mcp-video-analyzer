@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { FIXTURES_DIR } from './fixtures.js';
 import { runFfmpeg } from './tools.js';
 
@@ -35,7 +35,15 @@ import { runFfmpeg } from './tools.js';
 // durations), so ANY recipe edit self-invalidates — no manual version bump
 // for a human to forget, the same hand-maintained-invariant hazard the
 // cache-key guard in analyze-core.ts exists to eliminate.
-const GOLDEN_DIR = join(tmpdir(), 'mcp-video-analyzer', 'test-golden');
+// Repo-local, NOT os.tmpdir(): a fixed name under the shared temp dir is
+// pre-creatable by any other local user, and CodeQL followed the taint from
+// here through the e2e tests into the sidecar writes in analysis-sidecar.ts
+// (js/insecure-temporary-file). node_modules is already gitignored and lives
+// and dies with this checkout — the right lifetime for clips rendered by this
+// checkout's ffmpeg. Cost of the move: `npm ci` drops the cache and one run
+// regenerates it. CI never had a warm cache anyway (ephemeral tmpdirs).
+const REPO_ROOT = join(fileURLToPath(import.meta.url), '..', '..', '..');
+const GOLDEN_DIR = join(REPO_ROOT, 'node_modules', '.cache', 'mcp-video-analyzer-golden');
 
 /** Static header line, present on every dense-UI frame. */
 export const DENSE_UI_HEADER = 'ORDERS DASHBOARD 2026';

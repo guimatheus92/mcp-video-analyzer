@@ -323,11 +323,18 @@ describe('sidecar write/read', () => {
       expect(existsSync(join(tempDir, 'clip.vtt'))).toBe(false);
 
       // A pre-existing .vtt (e.g. the user's own GPU transcript) is preserved.
+      // The write is create-exclusive ('wx'), so this exercises the EEXIST path:
+      // the file is neither clobbered nor reported as written, and EEXIST must
+      // NOT surface as failed — an existing .vtt is the documented no-op.
       const userVtt = join(tempDir, 'clip.vtt');
       await writeFile(userVtt, 'WEBVTT\n\nUSER CONTENT', 'utf8');
-      await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, { transcriptFromWhisper: true });
+      const second = await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, {
+        transcriptFromWhisper: true,
+      });
       const { readFile } = await import('node:fs/promises');
       expect(await readFile(userVtt, 'utf8')).toContain('USER CONTENT');
+      expect(second.written).not.toContain(userVtt);
+      expect(second.failed).toBe(false);
     } finally {
       await cleanupTempDir(tempDir);
     }
