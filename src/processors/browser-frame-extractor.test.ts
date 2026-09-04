@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { extractBrowserFrames, generateTimestamps } from './browser-frame-extractor.js';
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 vi.mock('node:dns/promises', () => ({
   lookup: vi.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),

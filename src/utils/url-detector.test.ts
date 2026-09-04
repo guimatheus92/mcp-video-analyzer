@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   detectPlatform,
   extractLoomId,
@@ -8,6 +8,13 @@ import {
   sourceRejectionMessage,
   toLocalPath,
 } from './url-detector.js';
+
+// Not per-test: an assertion that fails BEFORE an inline `vi.unstubAllEnvs()`
+// leaves MCP_ALLOW_PRIVATE_URLS set for every later test in the file, which
+// turned one genuine cross-platform failure into three confusing ones on CI.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('detectPlatform', () => {
   it('detects Loom share URLs', () => {
@@ -221,13 +228,21 @@ describe('detectPlatform — blocked network destinations', () => {
 
     expect(detectPlatform('http://192.168.1.5/clip.mp4')).toBe('direct');
     expect(detectPlatform('http://localhost:8080/clip.mp4')).toBe('direct');
-    expect(detectPlatform('\\\\nas.example\\share\\x.mp4')).toBe('local');
 
     expect(detectPlatform('https://169.254.169.254/latest.mp4')).toBeNull();
     expect(detectPlatform('ftp://example.com/video.mp4')).toBeNull();
-
-    vi.unstubAllEnvs();
   });
+
+  // Only on win32: a backslash path is not absolute on POSIX, so it can never
+  // resolve to a local file there no matter what the opt-in says. The
+  // *refusal* above is platform-independent; accepting it is not.
+  (process.platform === 'win32' ? it : it.skip)(
+    'accepts an opted-in UNC path as a local file',
+    () => {
+      vi.stubEnv('MCP_ALLOW_PRIVATE_URLS', '1');
+      expect(detectPlatform('\\\\nas.example\\share\\x.mp4')).toBe('local');
+    },
+  );
 });
 
 describe('sourceRejectionMessage', () => {

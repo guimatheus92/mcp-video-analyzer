@@ -74,11 +74,20 @@ type Rejection = 'unsupported' | 'scheme' | 'blocked-metadata' | 'blocked-privat
 function classify(url: string): Platform | Rejection {
   if (!url) return 'unsupported';
 
+  // A UNC path is not a local file: ffmpeg opens it over SMB, which is the same
+  // lateral network reach as an http:// fetch, and on Windows the handshake
+  // hands the attacker's host an NTLM credential.
+  //
+  // Checked BEFORE toLocalPath because `isAbsolute()` is false for a backslash
+  // path on POSIX, so the verdict would otherwise degrade to a generic
+  // "unsupported" purely based on which OS the server happens to run on. An MCP
+  // config gets shared across machines; the refusal it gets should not vary.
+  if (isUncPath(url) && !allowPrivateUrls()) return 'unc';
+
   const localPath = toLocalPath(url);
   if (localPath !== null) {
-    // A UNC path is not a local file: ffmpeg opens it over SMB, which is the
-    // same lateral network reach as an http:// fetch, and on Windows the
-    // handshake hands the attacker's host an NTLM credential.
+    // Again for the `file://host/share/...` spelling, which only becomes a UNC
+    // path after fileURLToPath resolves it.
     if (isUncPath(localPath) && !allowPrivateUrls()) return 'unc';
     const ext = getExtension(localPath);
     return ext && VIDEO_EXTENSIONS.has(ext) ? 'local' : 'unsupported';
@@ -162,9 +171,11 @@ export function sourceRejectionMessage(input: unknown): string {
 /**
  * True for a Windows UNC path (`\\host\share\...`).
  *
- * The backslash form is checked on every platform so the guard is testable
- * everywhere and cannot regress on a Linux CI runner; the forward-slash form is
- * Windows-only, because `//foo/bar` is an ordinary path on POSIX.
+ * The backslash form is refused on every platform: it is never a valid POSIX
+ * path anyway, and refusing it uniformly keeps the verdict (and the error
+ * message) the same wherever the server runs. The forward-slash form is
+ * Windows-only, because `//foo/bar` is an ordinary path on POSIX and resolves
+ * to local disk there, not to a network share.
  */
 function isUncPath(path: string): boolean {
   if (/^\\\\[^\\/]/.test(path)) return true;

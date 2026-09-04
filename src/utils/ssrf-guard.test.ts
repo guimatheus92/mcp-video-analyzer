@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   BLOCKED_RANGE_COUNT,
   assertPublicUrl,
   isBlockedAddress,
   isBlockedHostLiteral,
 } from './ssrf-guard.js';
+
+// A failing assertion before an inline unstub would otherwise leave the opt-in
+// set for every later test in this file — which is how a single real failure
+// cascades into unrelated ones.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe('isBlockedAddress', () => {
   // Every row here is a destination some real advisory reached. The bypass
