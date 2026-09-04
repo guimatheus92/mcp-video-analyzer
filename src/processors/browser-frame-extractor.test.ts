@@ -1,5 +1,18 @@
-import { describe, expect, it } from 'vitest';
-import { generateTimestamps } from './browser-frame-extractor.js';
+import { describe, expect, it, vi } from 'vitest';
+import { extractBrowserFrames, generateTimestamps } from './browser-frame-extractor.js';
+
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+}));
+
+// Without this, the "public URL gets past the guard" case below launches a real
+// Chrome and navigates to the network on any machine that has one installed.
+// `launch` rejecting is the documented no-Chrome path: extractBrowserFrames
+// catches it and returns [].
+vi.mock('puppeteer-core', () => ({
+  default: { launch: vi.fn().mockRejectedValue(new Error('no chrome in this test')) },
+  launch: vi.fn().mockRejectedValue(new Error('no chrome in this test')),
+}));
 
 describe('browser-frame-extractor', () => {
   describe('generateTimestamps', () => {
@@ -50,6 +63,41 @@ describe('browser-frame-extractor', () => {
       for (let i = 1; i < timestamps.length; i++) {
         expect(timestamps[i]).toBeGreaterThan(timestamps[i - 1]);
       }
+    });
+  });
+
+  // The second SSRF sink (GHSA-hpmc-4g74-v53v). It was not in the report, and
+  // it is the more dangerous of the two: it renders the internal response and
+  // hands it back as a JPEG. Reached from analyze_video, get_frames,
+  // get_frame_at and get_frame_burst whenever the download strategy fails.
+  describe('extractBrowserFrames — blocked destinations', () => {
+    it.each([
+      'http://127.0.0.1:8931/x.mp4',
+      'http://localhost:8080/video',
+      'http://192.168.1.5/video',
+      'http://169.254.169.254/latest/meta-data/',
+      'ftp://example.com/x.mp4',
+    ])('refuses %s before Chrome is launched', async (url) => {
+      // Rejects rather than returning [] on purpose: every other zero-frame
+      // outcome here is graceful degradation, so a silent [] would make a
+      // refused destination indistinguishable from "no frames found".
+      await expect(extractBrowserFrames(url, '/tmp/out', { timestamps: [1] })).rejects.toThrow();
+    });
+
+    it('still blocks metadata with the opt-in on', async () => {
+      vi.stubEnv('MCP_ALLOW_PRIVATE_URLS', '1');
+      await expect(
+        extractBrowserFrames('http://169.254.169.254/latest.mp4', '/tmp/out', { timestamps: [1] }),
+      ).rejects.toThrow(/metadata endpoint/i);
+      vi.unstubAllEnvs();
+    });
+
+    it('gets past the guard for a public URL', async () => {
+      // Proves the guard is not rejecting everything: this reaches the
+      // puppeteer load, which returns [] when Chrome is absent.
+      await expect(
+        extractBrowserFrames('https://example.com/video.mp4', '/tmp/out', { timestamps: [1] }),
+      ).resolves.toBeInstanceOf(Array);
     });
   });
 });

@@ -14,7 +14,7 @@ import {
 import type { AnalyzeOptions, ProgressReporter } from './tools/analyze-core.js';
 import type { IFrameResult } from './types.js';
 import { persistentCacheDir } from './utils/temp-files.js';
-import { isVideoSource } from './utils/url-detector.js';
+import { isVideoSource, sourceRejectionMessage } from './utils/url-detector.js';
 import { warningReason } from './utils/warnings.js';
 
 const CLI_USAGE = `Usage: mcp-video-analyzer analyze <url-or-path> [options]
@@ -182,9 +182,7 @@ export async function runCli(argv: string[]): Promise<number> {
     url = resolve(url);
   }
   if (!url || !isVideoSource(url)) {
-    process.stderr.write(
-      'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or a path / file:// URI to a local video file\n',
-    );
+    process.stderr.write(`${sourceRejectionMessage(url)}\n`);
     return 1;
   }
 

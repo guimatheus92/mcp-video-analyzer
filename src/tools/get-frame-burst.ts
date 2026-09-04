@@ -7,15 +7,14 @@ import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor
 import { optimizeFramesKeepingOriginals } from '../processors/image-optimizer.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
-import { isVideoSource, toLocalPath } from '../utils/url-detector.js';
+import { isVideoSource, sourceRejectionMessage, toLocalPath } from '../utils/url-detector.js';
 import { maxWidthParam } from './frame-options.js';
 
 const GetFrameBurstSchema = z.object({
   url: z
     .string()
     .refine(isVideoSource, {
-      message:
-        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+      error: (issue) => sourceRejectionMessage(issue.input),
     })
     .describe(
       'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',

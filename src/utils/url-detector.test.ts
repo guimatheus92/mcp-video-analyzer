@@ -1,7 +1,13 @@
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { describe, expect, it } from 'vitest';
-import { detectPlatform, extractLoomId, isVideoSource, toLocalPath } from './url-detector.js';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  detectPlatform,
+  extractLoomId,
+  isVideoSource,
+  sourceRejectionMessage,
+  toLocalPath,
+} from './url-detector.js';
 
 describe('detectPlatform', () => {
   it('detects Loom share URLs', () => {
@@ -154,6 +160,106 @@ describe('detectPlatform', () => {
   });
 });
 
+// GHSA-hpmc-4g74-v53v. Every URL below classified as 'direct' before the fix —
+// the extension was the only thing checked, so the destination never was.
+// Proven against the pre-fix code, not asserted: see the PoC table below.
+describe('detectPlatform — blocked network destinations', () => {
+  it.each([
+    ['http://127.0.0.1:8931/x.mp4'], // the reporter's own PoC
+    ['http://127.0.0.1/video.mp4'],
+    ['http://localhost:8080/clip.mp4'],
+    ['http://LocalHost/clip.mp4'],
+    ['http://api.localhost/clip.mp4'],
+    ['http://nas.local/movie.mkv'],
+    ['http://[::1]:8080/x.mp4'],
+    ['http://192.168.1.5/clip.mp4'],
+    ['http://10.0.0.7/clip.mp4'],
+    ['http://172.16.4.2/clip.mp4'],
+    ['http://0.0.0.0:8080/x.mp4'],
+    ['http://100.64.0.1/x.mp4'],
+    ['https://169.254.169.254/latest.mp4'], // cloud metadata
+    ['http://168.63.129.16/x.mp4'],
+    ['http://user:pass@10.0.0.5/x.mp4'], // credentials must not smuggle a host past
+  ])('rejects %s', (url) => {
+    expect(detectPlatform(url)).toBeNull();
+    expect(isVideoSource(url)).toBe(false);
+  });
+
+  it.each([
+    ['ftp://example.com/video.mp4'],
+    ['data:text/plain,x.mp4'],
+    ['gopher://example.com/x.mp4'],
+    ['blob:https://example.com/abcd.mp4'],
+  ])('rejects the non-http scheme in %s', (url) => {
+    expect(detectPlatform(url)).toBeNull();
+  });
+
+  it('still accepts public hosts that merely look unusual', () => {
+    expect(detectPlatform('http://93.184.216.34/video.mp4')).toBe('direct');
+    expect(detectPlatform('https://cdn.example.com:8443/video.mp4')).toBe('direct');
+    // 172.15 and 172.64 sit just outside the blocked 172.16/12 and 172.32/11.
+    expect(detectPlatform('http://172.15.0.1/video.mp4')).toBe('direct');
+    expect(detectPlatform('http://172.64.0.1/video.mp4')).toBe('direct');
+  });
+
+  it('rejects UNC paths, which reach the network over SMB', () => {
+    // Backslash form is checked on every platform; see isUncPath.
+    expect(detectPlatform('\\\\attacker.example\\share\\x.mp4')).toBeNull();
+  });
+
+  (process.platform === 'win32' ? it : it.skip)(
+    'rejects a file:// URI whose authority makes it a UNC path',
+    () => {
+      expect(detectPlatform('file://attacker.example/share/x.mp4')).toBeNull();
+    },
+  );
+
+  it('lets the operator opt back in with MCP_ALLOW_PRIVATE_URLS', () => {
+    // Without this the opt-in could be dead code and every assertion above
+    // would still pass. It must NOT unlock metadata or the scheme check.
+    vi.stubEnv('MCP_ALLOW_PRIVATE_URLS', '1');
+
+    expect(detectPlatform('http://192.168.1.5/clip.mp4')).toBe('direct');
+    expect(detectPlatform('http://localhost:8080/clip.mp4')).toBe('direct');
+    expect(detectPlatform('\\\\nas.example\\share\\x.mp4')).toBe('local');
+
+    expect(detectPlatform('https://169.254.169.254/latest.mp4')).toBeNull();
+    expect(detectPlatform('ftp://example.com/video.mp4')).toBeNull();
+
+    vi.unstubAllEnvs();
+  });
+});
+
+describe('sourceRejectionMessage', () => {
+  it('points a LAN user at the opt-in instead of at a typo hunt', () => {
+    const message = sourceRejectionMessage('http://192.168.1.5/clip.mp4');
+    expect(message).toMatch(/private or loopback/i);
+    expect(message).toMatch(/MCP_ALLOW_PRIVATE_URLS=1/);
+  });
+
+  it('does not offer the opt-in for metadata, which it cannot unlock', () => {
+    const message = sourceRejectionMessage('https://169.254.169.254/latest.mp4');
+    expect(message).toMatch(/metadata endpoint/i);
+    expect(message).not.toMatch(/MCP_ALLOW_PRIVATE_URLS/);
+  });
+
+  it('names the scheme problem rather than the generic shape problem', () => {
+    expect(sourceRejectionMessage('ftp://example.com/video.mp4')).toMatch(/only http/i);
+  });
+
+  it('names UNC paths', () => {
+    expect(sourceRejectionMessage('\\\\attacker.example\\share\\x.mp4')).toMatch(/UNC/);
+  });
+
+  it('falls back to the original wording for a genuinely unsupported source', () => {
+    expect(sourceRejectionMessage('https://example.com/page.html')).toMatch(
+      /Must be a supported video URL/,
+    );
+    expect(sourceRejectionMessage('./relative.mp4')).toMatch(/Must be a supported video URL/);
+    expect(sourceRejectionMessage(42)).toMatch(/Must be a supported video URL/);
+  });
+});
+
 describe('toLocalPath', () => {
   it('returns the path unchanged for absolute POSIX paths', () => {
     expect(toLocalPath('/tmp/video.mp4')).toBe('/tmp/video.mp4');
@@ -192,7 +298,12 @@ describe('isVideoSource', () => {
   });
 
   it('accepts file:// URIs to video files', () => {
-    expect(isVideoSource('file:///tmp/video.mp4')).toBe(true);
+    // Same reason as the detectPlatform case above: a hardcoded POSIX literal
+    // throws under fileURLToPath on Windows. It used to pass here anyway,
+    // because the unparsable path fell through to the URL branch and the `.mp4`
+    // pathname classified it as 'direct' — a file:// URI routed to the HTTP
+    // downloader. The scheme check removed that fallthrough.
+    expect(isVideoSource(pathToFileURL(resolve('tmp', 'video.mp4')).href)).toBe(true);
   });
 
   it('rejects relative paths', () => {

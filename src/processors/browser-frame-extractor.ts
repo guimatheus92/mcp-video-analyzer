@@ -1,5 +1,9 @@
 import { join } from 'node:path';
+// Type-only: erased at compile time, so it does not turn the deliberately
+// dynamic `import('puppeteer-core')` below into a hard startup dependency.
+import type { HTTPRequest } from 'puppeteer-core';
 import type { IFrameResult } from '../types.js';
+import { allowPrivateUrls, assertPublicUrl, isBlockedHostLiteral } from '../utils/ssrf-guard.js';
 import { formatTimestamp } from './frame-extractor.js';
 
 interface BrowserFrameOptions {
@@ -66,6 +70,12 @@ export async function extractBrowserFrames(
   outputDir: string,
   options: BrowserFrameOptions,
 ): Promise<IFrameResult[]> {
+  // The second SSRF sink, and the worse of the two: this navigates a real
+  // browser, executes the page's JavaScript, and returns what it rendered to
+  // the caller as a JPEG — turning blind SSRF into a readable one. Checked
+  // before Chrome is even launched.
+  await assertPublicUrl(url);
+
   const puppeteer = await loadPuppeteer();
   if (!puppeteer) {
     return [];
@@ -91,6 +101,23 @@ export async function extractBrowserFrames(
 
   try {
     const page = await browser.newPage();
+
+    // `page.goto` follows redirects inside Chrome, so the pre-flight check
+    // above only covers the first hop. Interception is what covers the rest —
+    // and every subresource the page asks for, which is its own SSRF channel
+    // (an <img src="http://10.0.0.1/..."> is a request we made).
+    await page.setRequestInterception(true);
+    page.on('request', (request: HTTPRequest) => {
+      let blocked = false;
+      try {
+        const reason = isBlockedHostLiteral(new URL(request.url()).hostname);
+        blocked = reason === 'metadata' || (reason === 'private' && !allowPrivateUrls());
+      } catch {
+        // A non-URL request target (data:, blob:) is page-internal, not network.
+      }
+      void (blocked ? request.abort('blockedbyclient') : request.continue());
+    });
+
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
     // Wait for a <video> element to appear

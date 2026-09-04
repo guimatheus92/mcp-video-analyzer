@@ -4,7 +4,7 @@ import { mapWithConcurrency } from '../utils/concurrency.js';
 import { filterAnalysisResult } from '../utils/field-filter.js';
 import type { AnalysisField } from '../utils/field-filter.js';
 import { createProgressReporter } from '../utils/progress.js';
-import { isVideoSource } from '../utils/url-detector.js';
+import { isVideoSource, sourceRejectionMessage } from '../utils/url-detector.js';
 import { AnalyzeOptionsSchema, getAnalysis, resolveAnalyzeParams } from './analyze-core.js';
 import type { AnalyzeParams, ProgressReporter } from './analyze-core.js';
 
@@ -12,8 +12,7 @@ const AnalyzeVideosSchema = z.object({
   sources: z
     .array(
       z.string().refine(isVideoSource, {
-        message:
-          'Each source must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+        error: (issue) => sourceRejectionMessage(issue.input),
       }),
     )
     .min(1)
