@@ -148,7 +148,10 @@ Supports: Loom (loom.com/share/...), YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dai
         await progress(40, 'Extracting frames via browser fallback...');
         const timestamps = generateTimestamps(metadata.duration, maxFrames);
         frames = await extractBrowserFrames(url, tempDir, { timestamps }).catch((e: unknown) => {
-          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.name : 'error'}`);
+          // `warningReason`, not `e.name`: a refused destination has to say WHY
+          // it was refused, or the SSRF verdict reaches the user as the bare
+          // string "BlockedDestinationError".
+          warnings.push(`Browser extraction failed: ${warningReason(e)}`);
           return [];
         });
       }

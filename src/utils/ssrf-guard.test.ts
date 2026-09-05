@@ -49,11 +49,23 @@ describe('isBlockedAddress', () => {
     ['2001::1', 'private'], // Teredo
     ['2001:db8::1', 'private'],
     ['fd00:ec2::254', 'metadata'],
-    // NAT64 reaching the AWS IMDS — 169.254.169.254 embedded as IPv6
-    ['64:ff9b::a9fe:a9fe', 'private'],
+    ['64:ff9b::8.8.8.8', 'private'], // NAT64 prefix is never a video host
+    // NAT64/6to4 reaching the AWS IMDS — 169.254.169.254 embedded as IPv6.
+    // `metadata`, not `private`: this IS the metadata service, and `private` is
+    // the verdict MCP_ALLOW_PRIVATE_URLS unlocks.
+    ['64:ff9b::a9fe:a9fe', 'metadata'],
+    ['2002:a9fe:a9fe::', 'metadata'],
     // mcp-searxng CVE-2026-54689: IPv4-mapped IPv6 canonicalization bypass
     ['::ffff:127.0.0.1', 'private'],
     ['::ffff:169.254.169.254', 'metadata'],
+    // ...and the spelling production actually sees. `new URL()` normalizes an
+    // IPv4-mapped literal to its hex form, so the two dotted rows above are the
+    // only ones a string match catches and the only ones that never arrive.
+    ['::ffff:7f00:1', 'private'],
+    ['::ffff:a9fe:a9fe', 'metadata'],
+    // Deprecated IPv4-compatible (`::/96`) embeds a v4 address the same way.
+    ['::7f00:1', 'private'],
+    ['::a9fe:a9fe', 'metadata'],
   ])('blocks %s as %s', (address, reason) => {
     expect(isBlockedAddress(address)).toBe(reason);
   });
@@ -212,5 +224,42 @@ describe('MCP_ALLOW_PRIVATE_URLS opt-in', () => {
     vi.stubEnv('MCP_ALLOW_PRIVATE_URLS', '1');
     await expect(assertPublicUrl('file:///etc/passwd.mp4')).rejects.toThrow(/only http/i);
     vi.unstubAllEnvs();
+  });
+
+  it('still blocks metadata reached through an embedded-IPv4 spelling', async () => {
+    // The opt-in unlocks `private`, never `metadata`. An embedded-IPv4 v6
+    // literal is the same destination as the dotted form, so it must reach the
+    // same verdict — otherwise the opt-in silently unlocks the IMDS.
+    vi.stubEnv('MCP_ALLOW_PRIVATE_URLS', '1');
+    for (const url of [
+      'http://[::ffff:169.254.169.254]/latest.mp4', // normalizes to ::ffff:a9fe:a9fe
+      'http://[64:ff9b::a9fe:a9fe]/latest.mp4', // NAT64
+      'http://[::a9fe:a9fe]/latest.mp4', // deprecated IPv4-compatible
+    ]) {
+      await expect(assertPublicUrl(url)).rejects.toThrow(/metadata endpoint/i);
+    }
+    vi.unstubAllEnvs();
+  });
+});
+
+describe('embedded-IPv4 IPv6 literals through a real URL', () => {
+  // `new URL()` rewrites `[::ffff:127.0.0.1]` to `[::ffff:7f00:1]`, so these
+  // are the only spellings the sinks ever hand to the guard. Asserting the
+  // dotted form alone is a test that cannot fail.
+  it.each([
+    ['http://[::ffff:127.0.0.1]/x.mp4', /private or loopback/i],
+    ['http://[::ffff:7f00:1]/x.mp4', /private or loopback/i],
+    ['http://[::ffff:169.254.169.254]/x.mp4', /metadata endpoint/i],
+    ['http://[::ffff:a9fe:a9fe]/x.mp4', /metadata endpoint/i],
+    ['http://[::7f00:1]/x.mp4', /private or loopback/i],
+  ])('refuses %s', async (url, message) => {
+    await expect(assertPublicUrl(url)).rejects.toThrow(message);
+  });
+
+  it('normalizes the dotted spelling away, which is why the numeric check matters', () => {
+    // Pins the assumption the rows above rest on. If Node ever stopped
+    // rewriting these, the guard would still be correct — but this test
+    // documents why the hex rows exist at all.
+    expect(new URL('http://[::ffff:169.254.169.254]/').hostname).toBe('[::ffff:a9fe:a9fe]');
   });
 });

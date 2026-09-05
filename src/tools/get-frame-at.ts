@@ -137,7 +137,10 @@ Returns: A single image of the video frame at the specified timestamp.`,
       const browserFrames = await extractBrowserFrames(url, tempDir, {
         timestamps: [seconds],
       }).catch((e: unknown) => {
-        warnings.push(`Browser extraction failed: ${e instanceof Error ? e.name : 'error'}`);
+        // `warningReason`, not `e.name`: a refused destination has to say WHY
+        // it was refused, or the SSRF verdict reaches the user as the bare
+        // string "BlockedDestinationError".
+        warnings.push(`Browser extraction failed: ${warningReason(e)}`);
         return [];
       });
 

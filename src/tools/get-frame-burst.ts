@@ -8,6 +8,7 @@ import { optimizeFramesKeepingOriginals } from '../processors/image-optimizer.js
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource, sourceRejectionMessage, toLocalPath } from '../utils/url-detector.js';
+import { warningReason } from '../utils/warnings.js';
 import { maxWidthParam } from './frame-options.js';
 
 const GetFrameBurstSchema = z.object({
@@ -166,7 +167,10 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps }).catch(
         (e: unknown) => {
-          warnings.push(`Browser extraction failed: ${e instanceof Error ? e.name : 'error'}`);
+          // `warningReason`, not `e.name`: a refused destination has to say WHY
+          // it was refused, or the SSRF verdict reaches the user as the bare
+          // string "BlockedDestinationError".
+          warnings.push(`Browser extraction failed: ${warningReason(e)}`);
           return [];
         },
       );

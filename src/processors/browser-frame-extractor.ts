@@ -3,7 +3,7 @@ import { join } from 'node:path';
 // dynamic `import('puppeteer-core')` below into a hard startup dependency.
 import type { HTTPRequest } from 'puppeteer-core';
 import type { IFrameResult } from '../types.js';
-import { allowPrivateUrls, assertPublicUrl, isBlockedHostLiteral } from '../utils/ssrf-guard.js';
+import { assertPublicUrl } from '../utils/ssrf-guard.js';
 import { formatTimestamp } from './frame-extractor.js';
 
 interface BrowserFrameOptions {
@@ -17,6 +17,39 @@ interface BrowserFrameOptions {
   seekDelay?: number;
   /** Milliseconds to wait for video element to appear (default: 15000) */
   videoLoadTimeout?: number;
+}
+
+/**
+ * Schemes a page resolves internally — they never reach the network, so there
+ * is no destination to validate. Aborting them would break the fallback
+ * outright: MSE video players hand the `<video>` element a `blob:` URL, and
+ * that element is the entire point of opening the page.
+ */
+const PAGE_INTERNAL_SCHEMES: ReadonlySet<string> = new Set(['data:', 'blob:', 'about:']);
+
+/**
+ * Whether the browser may issue this request. Fails closed: an unparsable
+ * target, an unresolvable host, or any scheme that is neither http(s) nor
+ * page-internal is refused.
+ *
+ * `assertPublicUrl` (not `isBlockedHostLiteral`) because redirects and
+ * subresources are exactly where a name that resolves to 10.0.0.1 shows up —
+ * a literal-only check there re-opens the hole the pre-flight check closed.
+ */
+async function isAllowedRequestTarget(url: string): Promise<boolean> {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return false;
+  }
+
+  if (PAGE_INTERNAL_SCHEMES.has(protocol)) return true;
+
+  return assertPublicUrl(url).then(
+    () => true,
+    () => false,
+  );
 }
 
 // Browser-context scripts (run inside page.evaluate as strings to avoid DOM type issues)
@@ -108,14 +141,19 @@ export async function extractBrowserFrames(
     // (an <img src="http://10.0.0.1/..."> is a request we made).
     await page.setRequestInterception(true);
     page.on('request', (request: HTTPRequest) => {
-      let blocked = false;
-      try {
-        const reason = isBlockedHostLiteral(new URL(request.url()).hostname);
-        blocked = reason === 'metadata' || (reason === 'private' && !allowPrivateUrls());
-      } catch {
-        // A non-URL request target (data:, blob:) is page-internal, not network.
-      }
-      void (blocked ? request.abort('blockedbyclient') : request.continue());
+      // Async on purpose: the literal check alone cannot see a hostname that
+      // merely RESOLVES internal, which is the same bypass the pre-flight
+      // `assertPublicUrl` exists to close. Puppeteer keeps the request paused
+      // until continue/abort resolves, so awaiting DNS here is safe.
+      void (async () => {
+        const allowed = await isAllowedRequestTarget(request.url());
+        // Both throw when the request was already handled or the page went
+        // away. Neither is actionable, and an unhandled rejection out of an
+        // event listener takes the whole process down.
+        await (allowed ? request.continue() : request.abort('blockedbyclient')).catch(
+          () => undefined,
+        );
+      })();
     });
 
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });

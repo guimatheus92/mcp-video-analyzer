@@ -96,12 +96,23 @@ function parseIp(value: string): { bits: bigint; family: 4 | 6 } | null {
 
   if (family !== 6) return null;
 
-  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(value);
-  if (mapped) {
-    return parseIp(mapped[1]);
+  const bits = expandIpv6(value);
+
+  // Embedded-IPv4 forms are the same destination as their v4 spelling, so they
+  // must be compared against the v4 rows. Collapse them NUMERICALLY: matching
+  // the dotted spelling as a string catches nothing in production, because
+  // `new URL()` normalizes `::ffff:127.0.0.1` to `::ffff:7f00:1` before the
+  // hostname ever reaches this function.
+  //   ::ffff:0:0/96 — IPv4-mapped (mcp-searxng CVE-2026-54689)
+  //   ::/96         — deprecated IPv4-compatible
+  // `::` and `::1` are addresses in their own right, not embedded IPv4, and
+  // keep matching their own `::/128` and `::1/128` rows.
+  const top96 = bits >> 32n;
+  if (top96 === 0xffffn || (top96 === 0n && bits > 1n)) {
+    return { bits: bits & 0xffffffffn, family: 4 };
   }
 
-  return { bits: expandIpv6(value), family: 6 };
+  return { bits, family: 6 };
 }
 
 /** Expand an IPv6 literal (including `::` and trailing dotted-quad) to 128 bits. */
@@ -134,6 +145,24 @@ function expandIpv6(value: string): bigint {
     bits = (bits << 16n) | BigInt(parseInt(part, 16));
   }
   return bits;
+}
+
+/** Top 96 bits of the RFC6052 NAT64 well-known prefix, `64:ff9b::/96`. */
+const NAT64_PREFIX = 0x0064ff9b0000000000000000n;
+/** Top 16 bits of the RFC3056 6to4 prefix, `2002::/16`. */
+const SIXTOFOUR_PREFIX = 0x2002n;
+
+/**
+ * The IPv4 address an IPv6 transition prefix carries, or null.
+ *
+ * Only the prefixes that genuinely embed one: NAT64 puts it in the low 32 bits,
+ * 6to4 in the two hextets after the prefix. Both are already in BLOCKED_RANGES;
+ * this exists so the embedded destination can be judged on its own.
+ */
+function embeddedIpv4(bits: bigint): bigint | null {
+  if (bits >> 32n === NAT64_PREFIX) return bits & 0xffffffffn;
+  if (bits >> 112n === SIXTOFOUR_PREFIX) return (bits >> 80n) & 0xffffffffn;
+  return null;
 }
 
 function parseCidr(cidr: string): Cidr {
@@ -174,6 +203,20 @@ export function isBlockedAddress(address: string): BlockedReason | null {
   if (!parsed) return null;
 
   if (inAnyRange(parsed, PARSED_METADATA)) return 'metadata';
+
+  // A transition prefix carries a v4 address in its low bits without being one
+  // (unlike ::ffff:0:0/96, which parseIp already collapses). BLOCKED_RANGES
+  // refuses the whole prefix, but only as `private` — and `private` is what the
+  // operator opt-in unlocks, while `metadata` must never be. So the embedded
+  // address needs its own metadata verdict before the range check wins, or
+  // `64:ff9b::a9fe:a9fe` reaches the IMDS whenever the opt-in is on.
+  if (parsed.family === 6) {
+    const embedded = embeddedIpv4(parsed.bits);
+    if (embedded !== null && inAnyRange({ bits: embedded, family: 4 }, PARSED_METADATA)) {
+      return 'metadata';
+    }
+  }
+
   if (inAnyRange(parsed, PARSED_RANGES)) return 'private';
 
   return null;
