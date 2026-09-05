@@ -3,6 +3,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { DirectAdapter } from './direct.adapter.js';
 
+// The SSRF guard resolves the hostname before fetching, so `example.com` would
+// otherwise turn this offline unit test into a network-dependent one — and
+// `npm run check` (which prepublishOnly runs) has to stay offline.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+}));
+
 describe('DirectAdapter', () => {
   const adapter = new DirectAdapter();
   const originalFetch = globalThis.fetch;
@@ -72,6 +79,7 @@ describe('DirectAdapter', () => {
 
       globalThis.fetch = vi.fn().mockResolvedValue({
         ok: true,
+        status: 200,
         body: readableStream,
       });
 

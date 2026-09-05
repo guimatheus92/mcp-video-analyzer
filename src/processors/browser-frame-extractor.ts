@@ -1,5 +1,9 @@
 import { join } from 'node:path';
+// Type-only: erased at compile time, so it does not turn the deliberately
+// dynamic `import('puppeteer-core')` below into a hard startup dependency.
+import type { HTTPRequest } from 'puppeteer-core';
 import type { IFrameResult } from '../types.js';
+import { assertPublicUrl } from '../utils/ssrf-guard.js';
 import { formatTimestamp } from './frame-extractor.js';
 
 interface BrowserFrameOptions {
@@ -13,6 +17,39 @@ interface BrowserFrameOptions {
   seekDelay?: number;
   /** Milliseconds to wait for video element to appear (default: 15000) */
   videoLoadTimeout?: number;
+}
+
+/**
+ * Schemes a page resolves internally — they never reach the network, so there
+ * is no destination to validate. Aborting them would break the fallback
+ * outright: MSE video players hand the `<video>` element a `blob:` URL, and
+ * that element is the entire point of opening the page.
+ */
+const PAGE_INTERNAL_SCHEMES: ReadonlySet<string> = new Set(['data:', 'blob:', 'about:']);
+
+/**
+ * Whether the browser may issue this request. Fails closed: an unparsable
+ * target, an unresolvable host, or any scheme that is neither http(s) nor
+ * page-internal is refused.
+ *
+ * `assertPublicUrl` (not `isBlockedHostLiteral`) because redirects and
+ * subresources are exactly where a name that resolves to 10.0.0.1 shows up —
+ * a literal-only check there re-opens the hole the pre-flight check closed.
+ */
+async function isAllowedRequestTarget(url: string): Promise<boolean> {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return false;
+  }
+
+  if (PAGE_INTERNAL_SCHEMES.has(protocol)) return true;
+
+  return assertPublicUrl(url).then(
+    () => true,
+    () => false,
+  );
 }
 
 // Browser-context scripts (run inside page.evaluate as strings to avoid DOM type issues)
@@ -66,6 +103,12 @@ export async function extractBrowserFrames(
   outputDir: string,
   options: BrowserFrameOptions,
 ): Promise<IFrameResult[]> {
+  // The second SSRF sink, and the worse of the two: this navigates a real
+  // browser, executes the page's JavaScript, and returns what it rendered to
+  // the caller as a JPEG — turning blind SSRF into a readable one. Checked
+  // before Chrome is even launched.
+  await assertPublicUrl(url);
+
   const puppeteer = await loadPuppeteer();
   if (!puppeteer) {
     return [];
@@ -91,6 +134,28 @@ export async function extractBrowserFrames(
 
   try {
     const page = await browser.newPage();
+
+    // `page.goto` follows redirects inside Chrome, so the pre-flight check
+    // above only covers the first hop. Interception is what covers the rest —
+    // and every subresource the page asks for, which is its own SSRF channel
+    // (an <img src="http://10.0.0.1/..."> is a request we made).
+    await page.setRequestInterception(true);
+    page.on('request', (request: HTTPRequest) => {
+      // Async on purpose: the literal check alone cannot see a hostname that
+      // merely RESOLVES internal, which is the same bypass the pre-flight
+      // `assertPublicUrl` exists to close. Puppeteer keeps the request paused
+      // until continue/abort resolves, so awaiting DNS here is safe.
+      void (async () => {
+        const allowed = await isAllowedRequestTarget(request.url());
+        // Both throw when the request was already handled or the page went
+        // away. Neither is actionable, and an unhandled rejection out of an
+        // event listener takes the whole process down.
+        await (allowed ? request.continue() : request.abort('blockedbyclient')).catch(
+          () => undefined,
+        );
+      })();
+    });
+
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
 
     // Wait for a <video> element to appear

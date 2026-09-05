@@ -26,6 +26,13 @@ these are the parts worth looking at:
 - command construction around the spawned binaries (`yt-dlp`, the bundled
   `ffmpeg-static`, the whisper CLI) — argument injection through a URL, a file
   path, or an env var;
+- **the destination of any outbound request** — the `url` tool argument is
+  attacker-reachable whenever the driving agent reads untrusted content, so a
+  path that reaches loopback, a LAN range, cloud metadata, or a UNC share is in
+  scope. `MCP_ALLOW_PRIVATE_URLS=1` is a deliberate operator opt-in and is not
+  itself a finding; a way *around* the guard is (a redirect hop, an address
+  encoding, a sink that skips it, or anything reaching metadata with the opt-in
+  on). See "Network destinations" in the README for what is enforced;
 - path handling for downloads, temp files and sidecars written next to local
   videos (`MCP_WRITE_SIDECARS`);
 - credential handling for `YTDLP_COOKIES` / `YTDLP_COOKIES_FROM_BROWSER`,

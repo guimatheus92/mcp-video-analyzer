@@ -3,6 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import { TwelveLabsAdapter } from './twelvelabs.adapter.js';
 
+// Same reason as direct.adapter.test.ts: the SSRF guard resolves DNS before
+// the download, and `npm run check` must not depend on the network.
+vi.mock('node:dns/promises', () => ({
+  lookup: vi.fn().mockResolvedValue([{ address: '93.184.216.34', family: 4 }]),
+}));
+
 const DIRECT_URL = 'https://example.com/demo.mp4';
 
 const ANALYSIS_TEXT = `SUMMARY:
@@ -308,7 +314,7 @@ describe('TwelveLabsAdapter', () => {
           controller.close();
         },
       });
-      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, body: readableStream });
+      globalThis.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, body: readableStream });
       const tempDir = await createTempDir();
       try {
         const result = await adapter.downloadVideo(DIRECT_URL, tempDir);

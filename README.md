@@ -311,13 +311,30 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 
 > **Loom frames**: transcript, metadata, and comments come straight from Loom's API with no extra tooling. Frame extraction is different — Loom serves most videos as separate DASH video+audio streams, which only [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp`) fetches and merges. Merging uses the bundled `ffmpeg-static`, so no system ffmpeg is required. Without yt-dlp a direct-CDN fallback still covers some videos; when it can't, you get transcript + metadata + comments plus a warning explaining why frames are missing.
 >
-> **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to.
+> **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to. UNC / network share paths (`\\host\share\clip.mp4`) are the exception: they reach the network rather than local disk, so they follow the [network destination](#network-destinations) rules and need `MCP_ALLOW_PRIVATE_URLS=1`.
 >
 > **Sidecar transcripts**: if a `clip.vtt`, `clip.srt`, `clip.en.vtt`, etc. lives next to `clip.mp4`, it's used as the transcript automatically — no Whisper roundtrip needed. SRT is converted to VTT in-memory.
 >
 > **Embedded subtitles**: if no sidecar is found and the container has an embedded subtitle stream (common in `.mkv` / `.mov` / `.mp4` from screen recorders), it's transmuxed to VTT via ffmpeg and used as the transcript.
 >
 > **Recognized extensions** (local files and direct URLs): `.mp4` `.mov` `.mkv` `.webm` `.avi` `.m4v` `.wmv` `.flv` `.mpeg` `.mpg` `.m2ts` `.mts` `.3gp` `.ogv`. The extension only gates routing — ffmpeg does the actual demuxing, so most common containers work. `.ts` is excluded to avoid colliding with TypeScript source files.
+
+### Network destinations
+
+Only `http://` and `https://` URLs are fetched, and only to **public** addresses. Requests to loopback (`localhost`, `127.0.0.1`, `::1`), private/LAN ranges, link-local, CGNAT, `.local` mDNS names, and Windows UNC paths are refused, as are non-HTTP schemes like `ftp://` and `data:`.
+
+This matters because the `url` argument is attacker-reachable in the normal case: an agent driving this server can be steered by the content it reads, so a URL it passes in is not necessarily one the user chose. Without the restriction the server is a proxy into whatever network it happens to sit on.
+
+The check runs on the resolved address, not just the text, so a public hostname that resolves to `10.0.0.5` is refused too — and **every hop of a redirect chain is re-checked**, since a public URL answering `302 Location: http://127.0.0.1/` would otherwise walk straight past a first-hop-only check.
+
+```bash
+# Serving videos from a NAS or a local dev server? Opt back in:
+MCP_ALLOW_PRIVATE_URLS=1
+```
+
+Cloud instance metadata endpoints (`169.254.169.254`, Azure's `168.63.129.16`, and friends) stay blocked **even with that set** — there is no legitimate video there, and they are what an SSRF is usually after.
+
+Known limitation: the address is checked at resolution time, not at connection time, so DNS rebinding — a domain answering a public address to the check and a private one to the connection — is not covered. Run the server behind an egress proxy if that is in your threat model.
 
 ### Platform URLs via yt-dlp (YouTube, Instagram, TikTok, …)
 
@@ -426,6 +443,7 @@ Native frames cost several times more context than the default, so raise the cap
 | `MCP_FRAME_MAX_WIDTH` | Emitted frame width, in px | `800` | `0` (or `native`/`full`/`original`) disables the cap. A per-call `maxWidth` wins over it |
 | `MCP_FRAME_JPEG_QUALITY` | Emitted frame JPEG quality | `70` | Raise it when thin glyphs matter; env only, there is no per-call quality parameter. Values outside 1–100 fall back |
 | `MCP_CACHE_DIR` | Root for the tessdata cache and the CLI's default `--out` | per-user cache dir | Absolute paths only (a relative value is ignored). Use it when `$HOME` is read-only or absent — a hardened container, `ProtectHome=`, a quota'd home. The published Docker image sets it to `/tmp/mcp-video-analyzer-cache` so `--read-only --tmpfs /tmp` works out of the box |
+| `MCP_ALLOW_PRIVATE_URLS` | Reaching private/loopback network addresses | off | `1` allows `localhost`, LAN addresses (`192.168.x`, `10.x`, …), `.local` names and UNC paths. Off by default — see [Network destinations](#network-destinations) below. **Cloud metadata endpoints stay blocked either way** |
 
 A value either variable can't use — `1e3`, `1920px`, a quality of `150` — is rejected with a one-time warning on stderr and the default applies. It is not silently accepted: the whole point of the setting is to escape a downscale that otherwise looks like a normal result.
 

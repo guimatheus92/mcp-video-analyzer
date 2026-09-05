@@ -5,15 +5,14 @@ import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractAudioTrack, transcribeAudio } from '../processors/audio-transcriber.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
-import { isVideoSource } from '../utils/url-detector.js';
+import { isVideoSource, sourceRejectionMessage } from '../utils/url-detector.js';
 import { warningReason } from '../utils/warnings.js';
 
 const GetTranscriptSchema = z.object({
   url: z
     .string()
     .refine(isVideoSource, {
-      message:
-        'Must be a supported video URL (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook), a direct .mp4/.webm/.mov URL, or an absolute path / file:// URI to a local video file',
+      error: (issue) => sourceRejectionMessage(issue.input),
     })
     .describe(
       'Video source: Loom share link, platform video URL (YouTube, Vimeo, TikTok, Instagram, X, Twitch, Dailymotion, Facebook), direct .mp4/.webm/.mov URL, or absolute path to a local video file',

@@ -434,7 +434,13 @@ async function runAnalysisPipeline(
       tempDir = tempDir ?? (await createTempDir());
       videoPath = await adapter
         .downloadVideo(url, tempDir, (w) => warnings.push(w))
-        .catch(() => null);
+        .catch((e: unknown) => {
+          // A bare `.catch(() => null)` here is what `downloadDirectVideo`'s
+          // throw exists to prevent: it turns a deliberate SSRF refusal back
+          // into "that video was not available". Degrade, but say why.
+          warnings.push(`Video download failed: ${warningReason(e)}`);
+          return null;
+        });
     }
 
     // Whisper fallback: no transcript + a video file + a (probable) audio track.
