@@ -83,7 +83,15 @@ jobs:
       # whisper-ctranslate2 is the drop-in ctranslate2 CLI (no torch — installs
       # in seconds); pinned for the same reason yt-dlp is. The transcriber's
       # candidate list is [WHISPER_BIN, 'whisper'], hence WHISPER_BIN below.
-      - run: pipx install whisper-ctranslate2==0.5.7
+      # av<19: faster-whisper 1.2.1 passes `metadata_errors` to av.open(), which
+      # PyAV 19 removed — whisper-ctranslate2 logs the TypeError, writes no JSON
+      # and still exits 0, so the transcript comes back empty. Fixed upstream in
+      # SYSTRAN/faster-whisper#1495; drop the constraint once a release > 1.2.1
+      # ships. (pipx --preinstall does NOT hold the pin: the main install
+      # re-upgrades av.)
+      - run: |
+          echo 'av<19' > "$RUNNER_TEMP/whisper-constraints.txt"
+          PIP_CONSTRAINT="$RUNNER_TEMP/whisper-constraints.txt" pipx install whisper-ctranslate2==0.5.7
       - run: whisper-ctranslate2 --version
       # faster-whisper fetches the CT2 model from HuggingFace on first use
       # (~75MB for tiny); cache it across runs.
