@@ -83,12 +83,16 @@ unrelated bug fix — while still catching the next critical in a test runner
 In escalation order — there is deliberately **no allowlist file**, because an
 allowlist entry is added under deadline pressure and reviewed never:
 
-1. `npm audit fix`, commit the lockfile.
+1. `npm audit fix`, commit the lockfile. Regenerate it from main's lockfile on a
+   clean checkout, never from a `node_modules` that lacks registry metadata —
+   that strips `resolved`/`integrity`, and `src/lockfile.test.ts` will fail.
 2. Direct bump: `npm i <pkg>@<fixed-version>`.
 3. `overrides` in `package.json` when the vulnerable package is transitive and
    its parent has not released — with the removal condition written in a
    comment next to it (`npm ls <pkg>` shows every consumer on the fixed range →
-   delete the override).
+   delete the override). Its floor is the advisory's first patched version.
+   Note it only fixes *this repo's* audit: npm ignores `overrides` when the
+   package is installed as a dependency, and the lockfile isn't shipped.
 4. Replace or drop the dependency.
 5. Genuinely no fix anywhere (v0.9.0's `extract-zip`, which had no fixed
    version and was only escapable by a major bump of its *parent*): that is a
@@ -160,7 +164,10 @@ This downloads the Loom demo video, runs all processors, and saves JSON + frame 
 2. Make your changes with tests
 3. Run `npm run check` — all checks must pass
 4. If you changed tool output format or processors, regenerate examples: `npx tsx examples/generate.ts`
-5. Open a pull request with a clear description of what and why
+5. Open a pull request and fill in the template: every change (refactors included),
+   user-visible changes (tool output, `warnings[]` text, CLI flags), and dependency
+   changes with versions. Reviewers check the description against the diff, so a
+   claim like "no behavior change" has to be true.
 
 ## Reporting Issues
 
