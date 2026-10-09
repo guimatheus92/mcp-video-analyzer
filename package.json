@@ -94,5 +94,11 @@
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.57.0",
     "vitest": "^5.0.3"
+  },
+  "overrides": {
+    "@modelcontextprotocol/sdk": "^1.30.2",
+    "proxy-addr": "^2.0.8",
+    "smol-toml": "^1.8.1",
+    "source-map-js": "^1.2.2"
   }
 }
