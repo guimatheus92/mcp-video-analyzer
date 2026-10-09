@@ -1,7 +1,7 @@
 import type { IFrameResult, ITranscriptEntry } from '../types.js';
 import type { IOcrResult } from './frame-ocr.js';
 
-interface ITimelineEntry {
+export interface ITimelineEntry {
   time: string;
   seconds: number;
   transcript?: string;

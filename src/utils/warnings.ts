@@ -66,10 +66,8 @@ function reasonLine(text: string): string | null {
 export function warningReason(error: unknown): string {
   const message = (error instanceof Error ? error.message : String(error)).trim();
 
-  const alreadyClean =
-    message.length <= MAX_LENGTH && !message.includes('\n') && !ABSOLUTE_PATH.test(message);
-  // `test()` advances lastIndex on a /g regex; reset before the next use.
-  ABSOLUTE_PATH.lastIndex = 0;
+  const matchesPath = [...message.matchAll(ABSOLUTE_PATH)].length > 0;
+  const alreadyClean = message.length <= MAX_LENGTH && !message.includes('\n') && !matchesPath;
   if (alreadyClean) return message;
 
   const stderr = (error as { stderr?: unknown })?.stderr;
