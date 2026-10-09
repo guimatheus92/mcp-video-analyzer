@@ -1,3 +1,5 @@
+import type { ITimelineEntry } from './processors/annotated-timeline.js';
+
 /** Video sources the server can detect and route to a dedicated adapter. */
 export type Platform = 'loom' | 'direct' | 'local' | 'twelvelabs' | 'ytdlp';
 
@@ -56,15 +58,6 @@ export interface IOcrEntry {
   time: string;
   text: string;
   confidence: number;
-}
-
-export interface ITimelineEntry {
-  time: string;
-  seconds: number;
-  transcript?: string;
-  speaker?: string;
-  frameIndex?: number;
-  ocrText?: string;
 }
 
 export interface IAnalysisResult {

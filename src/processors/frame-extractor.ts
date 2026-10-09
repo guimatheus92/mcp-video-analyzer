@@ -11,9 +11,18 @@ const require = createRequire(import.meta.url);
 const ffmpegPath: string = require('ffmpeg-static') as string;
 
 /** Normalize path to forward slashes for ffmpeg image2 muxer (Windows compat) */
-function ffmpegPath_(p: string): string {
+function toFfmpegOutputPath(p: string): string {
   return p.replace(/\\/g, '/');
 }
+
+/**
+ * ffmpeg's `Duration: HH:MM:SS.cc, ...` line in stderr.
+ *
+ * Hoisted from `parseDurationFromStderr` so the intent is explicit and the
+ * literal isn't re-compiled on each call. Node hoists RegExp literals itself,
+ * so this is purely stylistic + a single anchor point.
+ */
+const DURATION_REGEX = /Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/;
 
 export function parseTimestamp(ts: string): number {
   const parts = ts.split(':').map(Number);
@@ -57,10 +66,6 @@ export function formatTimestamp(seconds: number): string {
  * failure must be path-free) — `e.message` on a signal death is the full
  * argv plus ffmpeg's banner.
  */
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
 export function ffmpegCrashReason(error: unknown, videoPath: string): string | null {
   const signal =
     error && typeof error === 'object' && 'signal' in error
@@ -96,7 +101,7 @@ export async function probeVideoDuration(videoPath: string): Promise<number> {
 }
 
 function parseDurationFromStderr(stderr: string): number {
-  const match = stderr.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/);
+  const match = stderr.match(DURATION_REGEX);
   if (!match) return 0;
 
   const hours = parseInt(match[1], 10);
@@ -203,12 +208,13 @@ export function parseSceneTimestamps(stderr: string): number[] {
 export async function extractSceneFrames(
   videoPath: string,
   outputDir: string,
-  options: { threshold?: number; maxFrames?: number } = {},
+  options: { threshold?: number; maxFrames?: number; onStderr?: (stderr: string) => void } = {},
 ): Promise<IFrameResult[]> {
   const threshold = options.threshold ?? 0.1;
   const maxFrames = options.maxFrames ?? 20;
+  const onStderr = options.onStderr;
 
-  const outputPattern = ffmpegPath_(join(outputDir, 'scene_%03d.jpg'));
+  const outputPattern = toFfmpegOutputPath(join(outputDir, 'scene_%03d.jpg'));
 
   try {
     const { stderr } = await execFile(
@@ -228,6 +234,7 @@ export async function extractSceneFrames(
       { timeout: 120000 },
     );
 
+    onStderr?.(stderr);
     const timestamps = parseSceneTimestamps(stderr);
     const files = await listFrameFiles(outputDir, 'scene_');
 
@@ -242,6 +249,7 @@ export async function extractSceneFrames(
     // Try to parse results from partial output
     if (error && typeof error === 'object' && 'stderr' in error) {
       const stderr = (error as { stderr: string }).stderr;
+      onStderr?.(stderr);
       const timestamps = parseSceneTimestamps(stderr);
       const files = await listFrameFiles(outputDir, 'scene_').catch(() => [] as string[]);
 
@@ -254,7 +262,7 @@ export async function extractSceneFrames(
       }
     }
 
-    const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
+    const msg = ffmpegCrashReason(error, videoPath) ?? String(error);
     throw new Error(`Scene frame extraction failed: ${msg}`, { cause: error });
   }
 }
@@ -265,7 +273,7 @@ export async function extractFrameAt(
   timestamp: string,
 ): Promise<IFrameResult> {
   const seconds = parseTimestamp(timestamp);
-  const outputPath = ffmpegPath_(join(outputDir, `frame_at_${seconds}.jpg`));
+  const outputPath = toFfmpegOutputPath(join(outputDir, `frame_at_${seconds}.jpg`));
 
   try {
     await execFile(
@@ -274,7 +282,7 @@ export async function extractFrameAt(
       { timeout: 30000 },
     );
   } catch (error: unknown) {
-    const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
+    const msg = ffmpegCrashReason(error, videoPath) ?? String(error);
     throw new Error(`Frame extraction at ${timestamp} failed: ${msg}`, { cause: error });
   }
 
@@ -302,7 +310,7 @@ export async function extractFrameBurst(
   const duration = toSeconds - fromSeconds;
   const fps = count / duration;
 
-  const outputPattern = ffmpegPath_(join(outputDir, 'burst_%03d.jpg'));
+  const outputPattern = toFfmpegOutputPath(join(outputDir, 'burst_%03d.jpg'));
 
   try {
     await execFile(
@@ -347,26 +355,31 @@ export async function extractFrameBurst(
 export async function extractDenseFrames(
   videoPath: string,
   outputDir: string,
-  options?: { fps?: number; maxFrames?: number },
+  options?: { fps?: number; maxFrames?: number; onStderr?: (stderr: string) => void },
 ): Promise<IFrameResult[]> {
   const requestedFps = options?.fps ?? 1;
   const maxFrames = options?.maxFrames ?? 60;
+  const onStderr = options?.onStderr;
 
   // Probe duration to cap frame count
   const duration = await probeVideoDuration(videoPath);
   const expectedFrames = Math.ceil(duration * requestedFps);
   const effectiveFps = expectedFrames > maxFrames ? maxFrames / duration : requestedFps;
 
-  const outputPattern = ffmpegPath_(join(outputDir, 'dense_%04d.jpg'));
+  const outputPattern = toFfmpegOutputPath(join(outputDir, 'dense_%04d.jpg'));
 
   try {
-    await execFile(
+    const { stderr } = await execFile(
       ffmpegPath,
       ['-i', videoPath, '-vf', `fps=${effectiveFps}`, '-q:v', '2', outputPattern, '-y'],
       { timeout: 180000 },
     );
+    onStderr?.(stderr);
   } catch (error: unknown) {
-    const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
+    if (error && typeof error === 'object' && 'stderr' in error) {
+      onStderr?.((error as { stderr: string }).stderr);
+    }
+    const msg = ffmpegCrashReason(error, videoPath) ?? String(error);
     throw new Error(`Dense frame extraction failed: ${msg}`, { cause: error });
   }
 
@@ -383,6 +396,14 @@ export interface KeyFrameExtraction {
   frames: IFrameResult[];
   /** Non-fatal messages to surface to the caller (graceful-degradation pattern). */
   warnings: string[];
+  /**
+   * Duration in seconds parsed from ffmpeg's stderr during extraction. Lets the
+   * caller skip a redundant `probeVideoDuration` when the adapter returned
+   * `duration: 0` but the extraction still saw the `Duration:` line — the
+   * scene run and the dense fallback both pass stderr to the parser.
+   * 0 when no Duration line was found.
+   */
+  duration: number;
 }
 
 /**
@@ -408,7 +429,7 @@ export async function extractKeyFrames(
 
   // A crashed ffmpeg reports itself; anything else keeps the original message.
   // The inner extractors already prefix their own label, so don't add it twice.
-  const reason = (e: unknown) => ffmpegCrashReason(e, videoPath) ?? errorMessage(e);
+  const reason = (e: unknown) => ffmpegCrashReason(e, videoPath) ?? String(e);
   const labelled = (label: string, e: unknown) => {
     const msg = reason(e);
     return msg.startsWith(label) ? msg : `${label}: ${msg}`;
@@ -419,26 +440,40 @@ export async function extractKeyFrames(
     return [] as IFrameResult[];
   };
 
+  // Reuse ffmpeg's `Duration:` line so the pipeline doesn't need a second probe
+  // when the adapter already returned `duration: 0`. The scene run captures
+  // first; if scene yields 0 frames the dense fallback (which also produces
+  // a Duration line) has another shot. Later writes win — the later ffmpeg run
+  // is the one whose Duration most reliably reflects the file we just wrote.
+  let capturedStderr = '';
+  const captureStderr = (s: string): void => {
+    if (s) capturedStderr = s;
+  };
+
   if (dense) {
-    const frames = await extractDenseFrames(videoPath, outputDir, { maxFrames }).catch(
-      dropToWarning('Dense frame extraction failed'),
-    );
-    return { frames, warnings };
+    const frames = await extractDenseFrames(videoPath, outputDir, {
+      maxFrames,
+      onStderr: captureStderr,
+    }).catch(dropToWarning('Dense frame extraction failed'));
+    return { frames, warnings, duration: parseDurationFromStderr(capturedStderr) };
   }
 
   let sceneErrored = false;
-  let frames = await extractSceneFrames(videoPath, outputDir, { threshold, maxFrames }).catch(
-    (e: unknown) => {
-      warnings.push(labelled('Scene frame extraction failed', e));
-      sceneErrored = true;
-      return [] as IFrameResult[];
-    },
-  );
+  let frames = await extractSceneFrames(videoPath, outputDir, {
+    threshold,
+    maxFrames,
+    onStderr: captureStderr,
+  }).catch((e: unknown) => {
+    warnings.push(labelled('Scene frame extraction failed', e));
+    sceneErrored = true;
+    return [] as IFrameResult[];
+  });
 
   if (frames.length === 0) {
-    frames = await extractDenseFrames(videoPath, outputDir, { maxFrames }).catch(
-      dropToWarning('Dense frame extraction failed'),
-    );
+    frames = await extractDenseFrames(videoPath, outputDir, {
+      maxFrames,
+      onStderr: captureStderr,
+    }).catch(dropToWarning('Dense frame extraction failed'));
     if (frames.length > 0) {
       // Distinguish "scene detection found no cuts" (the common, expected case
       // for static clips) from "scene detection errored" — the message would
@@ -451,7 +486,7 @@ export async function extractKeyFrames(
     }
   }
 
-  return { frames, warnings };
+  return { frames, warnings, duration: parseDurationFromStderr(capturedStderr) };
 }
 
 async function listFrameFiles(dir: string, prefix: string): Promise<string[]> {
