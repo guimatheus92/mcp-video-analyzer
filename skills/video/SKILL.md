@@ -20,6 +20,12 @@ If the `video-analyzer` MCP server is connected in this session, call its tools 
 - Title / duration / views / comments only → `get_metadata` (no download)
 - Motion or fast UI changes → `get_frame_burst`
 
+For subsecond motion, use fractional bounds (for example, `0:01.1` to `0:01.3`).
+FFmpeg burst extraction returns up to the requested count of real source frames;
+it does not duplicate frames when the requested rate exceeds the source rate.
+Preserve fractional timestamps when supplied. Browser fallback uses fractional
+seek targets, but those are not measured source-frame presentation timestamps.
+
 **Dense UI capture** (terminal, dashboard, IDE, spreadsheet — the meaning is in small text): pass `maxWidth` on any of these tools. Emitted frames are capped at 800 px wide by default, which turns a 1920×1080 screencast into 800×450 and drops a 15 px UI font below what a vision model can read. `maxWidth: 0` keeps the source resolution; a value like `1568` is the middle ground. Native frames cost several times more context, so raise it for the close read, not for the overview.
 
 ## Route B — no MCP server (any agent with a shell)

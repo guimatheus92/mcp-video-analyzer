@@ -564,6 +564,16 @@ src/
 └── types.ts                    # Shared TypeScript interfaces
 ```
 
+### Burst timing
+
+Burst extraction accepts fractional timestamps (for example, `0:01.1`). The
+FFmpeg path selects up to the requested count of existing source frames within
+`[from, to)`, without duplicating frames to satisfy an excessive sampling rate.
+Processor results retain each selected frame's video-relative presentation time,
+including fractional seconds. Browser fallback preserves fractional seek targets
+and separate screenshot files; its times are requested seeks, not measured source
+frame PTS. Browser seeking is not a frame-accurate substitute for local decoding.
+
 ## License
 
 MIT

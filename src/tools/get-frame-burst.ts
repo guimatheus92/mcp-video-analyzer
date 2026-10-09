@@ -40,7 +40,7 @@ const GetFrameBurstSchema = z.object({
 export function registerGetFrameBurst(server: FastMCP): void {
   server.addTool({
     name: 'get_frame_burst',
-    description: `Extract multiple frames evenly distributed across a time range.
+    description: `Extract up to the requested number of source frames across a time range.
 
 Designed for motion and vibration analysis where scene-change detection fails because
 the "scene" doesn't change — only the position/state of objects does.
@@ -57,7 +57,7 @@ Args:
   - to: End timestamp (e.g., "0:17")
   - count: Number of frames (default: 5, max: 30)
 
-Returns: N images evenly distributed between the from and to timestamps.`,
+Returns: Up to N source-frame images sampled in [from, to) by ffmpeg, without duplicating frames to meet the requested count. Fractional bounds such as "0:01.1" are supported. Browser fallback seeks across the range, including its endpoints; those seek targets are not measured source-frame PTS.`,
     parameters: GetFrameBurstSchema,
     annotations: {
       title: 'Get Frame Burst',
@@ -161,9 +161,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       await progress(30, 'Extracting frames via browser fallback...');
       const interval = (toSeconds - fromSeconds) / Math.max(frameCount - 1, 1);
-      const timestamps = Array.from({ length: frameCount }, (_, i) =>
-        Math.round(fromSeconds + i * interval),
-      );
+      const timestamps = Array.from({ length: frameCount }, (_, i) => fromSeconds + i * interval);
 
       const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps }).catch(
         (e: unknown) => {

@@ -48,6 +48,14 @@ describe('parseTimestamp', () => {
 });
 
 describe('formatTimestamp', () => {
+  it('preserves optional fractional precision without changing legacy formatting', () => {
+    expect(formatTimestamp(1.234567, 6)).toBe('0:01.234567');
+    expect(formatTimestamp(1.2, 6)).toBe('0:01.2');
+    expect(formatTimestamp(1, 6)).toBe('0:01');
+    expect(formatTimestamp(1.9)).toBe('0:01');
+    expect(formatTimestamp(59.9999999, 6)).toBe('1:00');
+    expect(formatTimestamp(3599.9999999, 6)).toBe('1:00:00');
+  });
   it('formats 83 seconds as "1:23"', () => {
     expect(formatTimestamp(83)).toBe('1:23');
   });

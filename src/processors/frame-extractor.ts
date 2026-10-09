@@ -30,15 +30,24 @@ export function parseTimestamp(ts: string): number {
   throw new Error(`Invalid timestamp format: "${ts}". Expected "M:SS" or "H:MM:SS".`);
 }
 
-export function formatTimestamp(seconds: number): string {
+export function formatTimestamp(seconds: number, fractionalDigits = 0): string {
+  if (fractionalDigits > 0) seconds = Number(seconds.toFixed(fractionalDigits));
   const hrs = Math.floor(seconds / 3600);
   const mins = Math.floor((seconds % 3600) / 60);
   const secs = Math.floor(seconds % 60);
+  const fraction =
+    fractionalDigits > 0
+      ? (seconds - Math.floor(seconds))
+          .toFixed(fractionalDigits)
+          .slice(1)
+          .replace(/0+$/, '')
+          .replace(/\.$/, '')
+      : '';
 
   if (hrs > 0) {
-    return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    return `${hrs}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}${fraction}`;
   }
-  return `${mins}:${String(secs).padStart(2, '0')}`;
+  return `${mins}:${String(secs).padStart(2, '0')}${fraction}`;
 }
 
 /**
@@ -303,11 +312,14 @@ export async function extractFrameBurst(
   const fps = count / duration;
 
   const outputPattern = ffmpegPath_(join(outputDir, 'burst_%03d.jpg'));
+  let timestamps: number[];
 
   try {
-    await execFile(
+    const { stderr } = await execFile(
       ffmpegPath,
       [
+        '-copyts',
+        '-start_at_zero',
         '-ss',
         String(fromSeconds),
         '-to',
@@ -315,13 +327,27 @@ export async function extractFrameBurst(
         '-i',
         videoPath,
         '-vf',
-        `fps=${fps}`,
+        // Select real source frames rather than rewriting their PTS with fps.
+        // One frame at/after each sampling slot; never synthesize duplicates.
+        `select='gte(t-${fromSeconds}+0.000001,selected_n/${fps})',showinfo`,
+        '-fps_mode',
+        'vfr',
+        '-frames:v',
+        String(count),
         '-q:v',
         '2',
         outputPattern,
         '-y',
       ],
       { timeout: 60000 },
+    );
+    // showinfo's pts_time is printed with limited significant digits. Use the
+    // integer PTS and time base so long clips do not lose subsecond precision.
+    const timeBase = /config in time_base:\s*(\d+)\/(\d+)/.exec(stderr);
+    if (!timeBase) throw new Error('Missing burst frame time base');
+    timestamps = Array.from(
+      stderr.matchAll(/\bn:\s*\d+\s+pts:\s*(-?\d+)/g),
+      (match) => (Number(match[1]) * Number(timeBase[1])) / Number(timeBase[2]),
     );
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
@@ -330,10 +356,9 @@ export async function extractFrameBurst(
 
   const files = await listFrameFiles(outputDir, 'burst_');
 
-  return files.map((file, i) => {
-    const frameTime = fromSeconds + (i * duration) / Math.max(count - 1, 1);
+  return files.slice(0, Math.min(count, timestamps.length)).map((file, i) => {
     return {
-      time: formatTimestamp(Math.round(frameTime)),
+      time: formatTimestamp(timestamps[i], 6),
       filePath: join(outputDir, file),
       mimeType: 'image/jpeg',
     };

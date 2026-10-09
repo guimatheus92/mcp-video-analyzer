@@ -28,6 +28,8 @@ If your agent supports MCP, register the stdio server instead — richer tool se
 
 ## Notes
 
+- Burst tools accept fractional bounds such as `0:01.1`. FFmpeg selects up to the requested count of source frames; source-rate limits can yield fewer. Preserve fractional frame times when available. Browser times are seek targets, not measured source-frame PTS.
+
 - Platform URLs (YouTube, Instagram, TikTok, …) need `yt-dlp` on PATH; direct `.mp4/.webm/.mov` URLs and local files don't. Loom transcript/metadata/comments don't either. Loom **frames** usually do — most Loom videos are separate DASH video+audio streams that only `yt-dlp` merges; a CDN fallback covers some without it.
 - The `warnings` array carries actionable hints (yt-dlp install, cookies via `YTDLP_COOKIES_FROM_BROWSER`, Whisper backends) — relay them, don't treat them as errors.
 - Only `http(s)` URLs to **public** addresses are fetched. `localhost`, LAN/private ranges, `.local` names, UNC paths and non-HTTP schemes are refused by design — if the user genuinely wants a video off their own network, tell them to set `MCP_ALLOW_PRIVATE_URLS=1`, don't retry the URL. Cloud metadata endpoints stay blocked regardless.
