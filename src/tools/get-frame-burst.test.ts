@@ -12,6 +12,7 @@ import {
   noProgress,
   warningsOf,
 } from '../../test/helpers/index.js';
+import { frameTimingsOf } from '../../test/helpers/tools.js';
 import { clearAdapters, registerAdapter } from '../adapters/adapter.interface.js';
 import { LocalFileAdapter } from '../adapters/local-file.adapter.js';
 import { registerGetFrameBurst } from './get-frame-burst.js';
@@ -65,6 +66,7 @@ describe('get_frame_burst zero-frame handling (issue #26)', () => {
 
     expect(frameCountOf(result)).toBe(0);
     expect(imageCount(result)).toBe(0);
+    expect(frameTimingsOf(result)).toEqual([]);
     const warning = warningsOf(result).join(' ');
     expect(warning).toMatch(/could not be decoded/i);
     expect(warning).not.toMatch(/ffmpeg|Command failed|-i |node_modules/i);

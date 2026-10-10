@@ -22,9 +22,17 @@ type ToolExecute = (
 
 // Shared parsers for the frame-tool JSON text block — CLAUDE.md: don't redefine
 // helpers in each test file.
-function parseDoc(result: ToolResult): { frameCount?: number; warnings?: string[] } {
+function parseDoc(result: ToolResult): {
+  frameCount?: number;
+  warnings?: string[];
+  frames?: { time: string; timingOrigin: string }[];
+} {
   const text = result.content.find((c) => c.type === 'text')?.text ?? '{}';
   return JSON.parse(text);
+}
+/** Per-image timing metadata, in the order of the returned image parts. */
+export function frameTimingsOf(result: ToolResult) {
+  return parseDoc(result).frames;
 }
 /** `frameCount` from a tool's JSON text block. */
 export function frameCountOf(result: ToolResult): number {

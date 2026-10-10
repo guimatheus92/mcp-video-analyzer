@@ -5,6 +5,7 @@ import { getAdapter } from '../adapters/adapter.interface.js';
 import { extractBrowserFrames } from '../processors/browser-frame-extractor.js';
 import { extractFrameBurst, parseTimestamp } from '../processors/frame-extractor.js';
 import { optimizeFramesKeepingOriginals } from '../processors/image-optimizer.js';
+import type { IFrameResult } from '../types.js';
 import { createProgressReporter } from '../utils/progress.js';
 import { createTempDir } from '../utils/temp-files.js';
 import { isVideoSource, sourceRejectionMessage, toLocalPath } from '../utils/url-detector.js';
@@ -40,7 +41,7 @@ const GetFrameBurstSchema = z.object({
 export function registerGetFrameBurst(server: FastMCP): void {
   server.addTool({
     name: 'get_frame_burst',
-    description: `Extract multiple frames evenly distributed across a time range.
+    description: `Extract up to the requested number of source frames across a time range.
 
 Designed for motion and vibration analysis where scene-change detection fails because
 the "scene" doesn't change — only the position/state of objects does.
@@ -57,7 +58,7 @@ Args:
   - to: End timestamp (e.g., "0:17")
   - count: Number of frames (default: 5, max: 30)
 
-Returns: N images evenly distributed between the from and to timestamps.`,
+Returns: A JSON text block with { frameCount, from, to, warnings, frames: [{ time, timingOrigin }] }, followed by images in the same order as frames. timingOrigin is "source-pts" for measured video-relative FFmpeg timestamps and "seek-target" for requested browser seeks. Empty results include frames: []. Up to N source-frame images sampled in [from, to) by ffmpeg, without duplicating frames to meet the requested count. Fractional bounds such as "0:01.1" are supported. Browser fallback seeks across the range, including its endpoints; those seek targets are not measured source-frame PTS.`,
     parameters: GetFrameBurstSchema,
     annotations: {
       title: 'Get Frame Burst',
@@ -98,20 +99,30 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       // Uniform, parseable response: success and degraded (issue #26) paths emit
       // the same JSON text block, plus any image(s).
-      const doc = (n: number) => ({
+      const doc = (frames: IFrameResult[]) => ({
         type: 'text' as const,
-        text: JSON.stringify({ frameCount: n, from, to, warnings }, null, 2),
+        text: JSON.stringify(
+          {
+            frameCount: frames.length,
+            from,
+            to,
+            warnings,
+            frames: frames.map(({ time, timingOrigin }) => ({ time, timingOrigin })),
+          },
+          null,
+          2,
+        ),
       });
-      const withImages = async (paths: string[]) => {
+      const withImages = async (frames: IFrameResult[]) => {
         const content: (
           { type: 'text'; text: string } | Awaited<ReturnType<typeof imageContent>>
-        )[] = [doc(paths.length)];
-        for (const path of paths) content.push(await imageContent({ path }));
+        )[] = [doc(frames)];
+        for (const frame of frames) content.push(await imageContent({ path: frame.filePath }));
         return { content };
       };
       const zeroFrames = (reason: string) => {
         warnings.push(reason);
-        return { content: [doc(0)] };
+        return { content: [doc([])] };
       };
 
       // Strategy 1: Download video + ffmpeg burst extraction
@@ -147,7 +158,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
           });
 
           await progress(100, 'Burst extraction complete');
-          return withImages(optimized.frames.map((f) => f.filePath));
+          return withImages(optimized.frames);
         }
       }
 
@@ -161,9 +172,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       await progress(30, 'Extracting frames via browser fallback...');
       const interval = (toSeconds - fromSeconds) / Math.max(frameCount - 1, 1);
-      const timestamps = Array.from({ length: frameCount }, (_, i) =>
-        Math.round(fromSeconds + i * interval),
-      );
+      const timestamps = Array.from({ length: frameCount }, (_, i) => fromSeconds + i * interval);
 
       const browserFrames = await extractBrowserFrames(url, tempDir, { timestamps }).catch(
         (e: unknown) => {
@@ -177,7 +186,7 @@ Returns: N images evenly distributed between the from and to timestamps.`,
 
       if (browserFrames.length > 0) {
         await progress(100, 'Burst extraction complete');
-        return withImages(browserFrames.map((f) => f.filePath));
+        return withImages(browserFrames);
       }
 
       return zeroFrames(

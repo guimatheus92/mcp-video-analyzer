@@ -173,12 +173,13 @@ export async function extractBrowserFrames(
 
     const results: IFrameResult[] = [];
 
-    for (const timestamp of options.timestamps) {
+    for (const [index, timestamp] of options.timestamps.entries()) {
       const seeked = await page.evaluate(seekScript(timestamp, seekDelay));
 
       if (!seeked) continue;
 
-      const filename = `browser_frame_${String(Math.round(timestamp)).padStart(4, '0')}.jpg`;
+      // Index prevents fractional (and deliberately repeated) seeks overwriting each other.
+      const filename = `browser_frame_${String(index).padStart(4, '0')}_${timestamp}.jpg`;
       const filePath = join(outputDir, filename);
 
       await page.screenshot({
@@ -188,7 +189,9 @@ export async function extractBrowserFrames(
       });
 
       results.push({
-        time: formatTimestamp(Math.round(timestamp)),
+        // This is the requested seek time, not a measurement of the decoded frame PTS.
+        time: formatTimestamp(timestamp, 6),
+        timingOrigin: 'seek-target',
         filePath,
         mimeType: 'image/jpeg',
       });
