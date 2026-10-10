@@ -574,6 +574,12 @@ including fractional seconds. Browser fallback preserves fractional seek targets
 and separate screenshot files; its times are requested seeks, not measured source
 frame PTS. Browser seeking is not a frame-accurate substitute for local decoding.
 
+`get_frame_burst` returns a JSON text block containing
+`{ frameCount, from, to, warnings, frames: [{ time, timingOrigin }] }`, followed
+by images in exactly the same order as `frames`. `timingOrigin: "source-pts"`
+means measured video-relative FFmpeg presentation time; `"seek-target"` means
+requested browser seek time. Empty/degraded results contain `frames: []`.
+
 ## License
 
 MIT

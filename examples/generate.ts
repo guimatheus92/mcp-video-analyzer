@@ -155,7 +155,12 @@ async function main() {
       const frame = burstFrames[i]!;
       const filename = `burst_${String(i + 1).padStart(3, '0')}.jpg`;
       await copyFile(frame.filePath, join(FRAMES_DIR, filename));
-      burstMeta.push({ filename, time: frame.time, mimeType: frame.mimeType });
+      burstMeta.push({
+        filename,
+        time: frame.time,
+        timingOrigin: frame.timingOrigin,
+        mimeType: frame.mimeType,
+      });
     }
     await saveJson('frames-burst', burstMeta);
 

@@ -36,6 +36,12 @@ If your agent supports MCP, register the stdio server instead — richer tool se
 - An empty transcript plus a "silent audio" warning means the video has no speech; that's content, not a failure.
 - Frames are emitted at 800 px wide by default. For a **dense UI capture** (terminal, dashboard, IDE, spreadsheet) that downscale drops small text below what a vision model can read — pass `maxWidth` on the MCP frame tools (`0` = source resolution), or `--max-width <px>` on the CLI. Native frames cost several times more context, so use it for the close read, not the overview.
 
+`get_frame_burst` returns a JSON text block containing
+`{ frameCount, from, to, warnings, frames: [{ time, timingOrigin }] }`, followed
+by images in exactly the same order as `frames`. `timingOrigin: "source-pts"`
+means measured video-relative FFmpeg presentation time; `"seek-target"` means
+requested browser seek time. Empty/degraded results contain `frames: []`.
+
 ## Contributing to this codebase
 
 Read `.claude/skills/video-analyzer-dev/SKILL.md` in full before changing any file in this repository. It is the single source of truth for architecture, conventions, testing rules, verification and the release process — this file intentionally does not repeat it, so that the two can never drift apart. Claude Code loads it as a skill automatically; other agents must open the file directly. See [CONTRIBUTING.md](CONTRIBUTING.md) for human PR and setup steps.

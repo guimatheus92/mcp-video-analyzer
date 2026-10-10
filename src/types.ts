@@ -48,6 +48,8 @@ export interface IChapter {
 
 export interface IFrameResult {
   time: string;
+  /** Omitted by extractors that do not report timing provenance. */
+  timingOrigin?: 'source-pts' | 'seek-target';
   filePath: string;
   mimeType: string;
 }

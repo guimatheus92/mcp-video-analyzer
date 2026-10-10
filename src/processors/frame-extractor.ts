@@ -1,5 +1,5 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { readdir } from 'node:fs/promises';
+import { mkdtemp, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
@@ -311,7 +311,9 @@ export async function extractFrameBurst(
   const duration = toSeconds - fromSeconds;
   const fps = count / duration;
 
-  const outputPattern = ffmpegPath_(join(outputDir, 'burst_%03d.jpg'));
+  // Count only this invocation's JPEGs, even when the caller reuses outputDir.
+  const burstDir = await mkdtemp(join(outputDir, 'burst-'));
+  const outputPattern = ffmpegPath_(join(burstDir, 'burst_%03d.jpg'));
   let timestamps: number[];
 
   try {
@@ -350,16 +352,20 @@ export async function extractFrameBurst(
       (match) => (Number(match[1]) * Number(timeBase[1])) / Number(timeBase[2]),
     );
   } catch (error: unknown) {
-    const msg = error instanceof Error ? error.message : String(error);
-    throw new Error(`Burst frame extraction failed: ${msg}`, { cause: error });
+    // Keep diagnostics in the internal cause, never in the public message.
+    throw new Error('Burst frame extraction failed.', { cause: error });
   }
 
-  const files = await listFrameFiles(outputDir, 'burst_');
+  const files = await listFrameFiles(burstDir, 'burst_');
+  if (timestamps.length < files.length) {
+    throw new Error('Burst frame timestamp metadata is incomplete.');
+  }
 
-  return files.slice(0, Math.min(count, timestamps.length)).map((file, i) => {
+  return files.slice(0, count).map((file, i) => {
     return {
       time: formatTimestamp(timestamps[i], 6),
-      filePath: join(outputDir, file),
+      timingOrigin: 'source-pts',
+      filePath: join(burstDir, file),
       mimeType: 'image/jpeg',
     };
   });

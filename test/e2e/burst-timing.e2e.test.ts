@@ -8,12 +8,13 @@ import sharp from 'sharp';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { clearAdapters, registerAdapter } from '../../src/adapters/adapter.interface.js';
 import { DirectAdapter } from '../../src/adapters/direct.adapter.js';
+import { LocalFileAdapter } from '../../src/adapters/local-file.adapter.js';
 import { extractBrowserFrames } from '../../src/processors/browser-frame-extractor.js';
 import { extractFrameBurst, parseTimestamp } from '../../src/processors/frame-extractor.js';
 import { registerGetFrameBurst } from '../../src/tools/get-frame-burst.js';
 import { cleanupTempDir, createTempDir } from '../../src/utils/temp-files.js';
 import { frameIndex, timingClip } from '../helpers/timing-clip.js';
-import { captureToolExecute, noProgress, runFfmpeg } from '../helpers/tools.js';
+import { captureToolExecute, frameTimingsOf, noProgress, runFfmpeg } from '../helpers/tools.js';
 
 // Only the executable selection changes; navigation, seeking and pixels are real.
 vi.mock('puppeteer-core', async (importOriginal) => {
@@ -46,6 +47,7 @@ it('labels burst images with the source time represented by their pixels', async
   const indices = await Promise.all(frames.map((frame) => frameIndex(frame.filePath)));
   const times = frames.map((frame) => parseTimestamp(frame.time));
   expect(frames).toHaveLength(5);
+  expect(frames.map((frame) => frame.timingOrigin)).toEqual(Array(5).fill('source-pts'));
   for (let i = 0; i < frames.length; i++) expect(times[i]).toBeCloseTo(indices[i] / 10, 3);
 });
 
@@ -56,6 +58,16 @@ it('keeps actual source times for a fractional start between frames', async () =
   const indices = await Promise.all(frames.map((frame) => frameIndex(frame.filePath)));
   expect(indices).toEqual([11, 13, 14, 16]);
   expect(frames.map((frame) => parseTimestamp(frame.time))).toEqual(indices.map((i) => i / 10));
+});
+
+it('isolates repeated bursts in the same output directory', async () => {
+  const out = join(dir, 'repeated');
+  await mkdir(out);
+  const first = await extractFrameBurst(video, out, '0:01', '0:02', 5);
+  const second = await extractFrameBurst(video, out, '0:02', '0:02.3', 30);
+  expect(await Promise.all(first.map((f) => frameIndex(f.filePath)))).toEqual([10, 12, 14, 16, 18]);
+  expect(await Promise.all(second.map((f) => frameIndex(f.filePath)))).toEqual([20, 21, 22]);
+  expect(await extractFrameBurst(video, out, '0:09', '0:10', 5)).toEqual([]);
 });
 
 it('does not duplicate source frames when the requested rate exceeds the source rate', async () => {
@@ -104,6 +116,35 @@ it('uses the video-relative timeline when the stream starts at a nonzero PTS', a
   expect(frames.map((frame) => parseTimestamp(frame.time))).toEqual([1, 1.2, 1.4, 1.6, 1.8]);
 });
 
+it.each([
+  { to: '0:02', count: 5, indices: [10, 12, 14, 16, 18] },
+  { to: '0:01.3', count: 30, indices: [10, 11, 12] },
+])(
+  'sends timing metadata matching every emitted image ($count requested)',
+  async ({ to, count, indices }) => {
+    clearAdapters();
+    registerAdapter(new LocalFileAdapter());
+    try {
+      const result = await captureToolExecute(registerGetFrameBurst)(
+        { url: video, from: '0:01', to, count, maxWidth: 320 },
+        noProgress,
+      );
+      const images = result.content.filter((c) => c.type === 'image');
+      expect(
+        await Promise.all(images.map((c) => frameIndex(Buffer.from(c.data ?? '', 'base64')))),
+      ).toEqual(indices);
+      expect(frameTimingsOf(result)).toEqual(
+        indices.map((i) => ({
+          time: i === 10 ? '0:01' : `0:01.${i - 10}`,
+          timingOrigin: 'source-pts',
+        })),
+      );
+    } finally {
+      clearAdapters();
+    }
+  },
+);
+
 describe.runIf(process.env.BROWSER_E2E === '1' || !!process.env.BROWSER_EXECUTABLE_PATH)(
   'real browser fractional burst',
   () => {
@@ -149,6 +190,7 @@ describe.runIf(process.env.BROWSER_E2E === '1' || !!process.env.BROWSER_EXECUTAB
       expect(frames).toHaveLength(3);
       expect(new Set(frames.map((frame) => frame.filePath)).size).toBe(3);
       expect(indices).toEqual([11, 12, 13]);
+      expect(frames.map((frame) => frame.timingOrigin)).toEqual(Array(3).fill('seek-target'));
       expect(frames.map((frame) => parseTimestamp(frame.time))).toEqual([1.1, 1.2, 1.3]);
     });
     it('preserves subsecond sampling through the get_frame_burst fallback', async () => {
@@ -173,6 +215,12 @@ describe.runIf(process.env.BROWSER_E2E === '1' || !!process.env.BROWSER_EXECUTAB
         ),
       );
       expect(indices).toEqual([11, 12, 13]);
+      expect(frameTimingsOf(result)).toEqual(
+        [1, 2, 3].map((i) => ({
+          time: `0:01.${i}`,
+          timingOrigin: 'seek-target',
+        })),
+      );
     });
   },
 );

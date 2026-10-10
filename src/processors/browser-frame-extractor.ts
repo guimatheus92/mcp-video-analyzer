@@ -191,6 +191,7 @@ export async function extractBrowserFrames(
       results.push({
         // This is the requested seek time, not a measurement of the decoded frame PTS.
         time: formatTimestamp(timestamp, 6),
+        timingOrigin: 'seek-target',
         filePath,
         mimeType: 'image/jpeg',
       });

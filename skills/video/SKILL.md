@@ -28,6 +28,12 @@ seek targets, but those are not measured source-frame presentation timestamps.
 
 **Dense UI capture** (terminal, dashboard, IDE, spreadsheet — the meaning is in small text): pass `maxWidth` on any of these tools. Emitted frames are capped at 800 px wide by default, which turns a 1920×1080 screencast into 800×450 and drops a 15 px UI font below what a vision model can read. `maxWidth: 0` keeps the source resolution; a value like `1568` is the middle ground. Native frames cost several times more context, so raise it for the close read, not for the overview.
 
+`get_frame_burst` returns a JSON text block containing
+`{ frameCount, from, to, warnings, frames: [{ time, timingOrigin }] }`, followed
+by images in exactly the same order as `frames`. `timingOrigin: "source-pts"`
+means measured video-relative FFmpeg presentation time; `"seek-target"` means
+requested browser seek time. Empty/degraded results contain `frames: []`.
+
 ## Route B — no MCP server (any agent with a shell)
 
 Run the one-shot CLI via Bash (first run downloads the npm package — slow is not broken; progress streams on stderr):
