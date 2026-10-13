@@ -1,14 +1,5 @@
-import type { IFrameResult, ITranscriptEntry } from '../types.js';
+import type { IFrameResult, ITimelineEntry, ITranscriptEntry } from '../types.js';
 import type { IOcrResult } from './frame-ocr.js';
-
-interface ITimelineEntry {
-  time: string;
-  seconds: number;
-  transcript?: string;
-  speaker?: string;
-  frameIndex?: number;
-  ocrText?: string;
-}
 
 /**
  * Build an annotated timeline that merges transcript entries, frame timestamps,

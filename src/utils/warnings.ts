@@ -66,10 +66,10 @@ function reasonLine(text: string): string | null {
 export function warningReason(error: unknown): string {
   const message = (error instanceof Error ? error.message : String(error)).trim();
 
+  // `search()`, not `test()`: it ignores the /g regex's lastIndex, so the check
+  // holds no state between calls.
   const alreadyClean =
-    message.length <= MAX_LENGTH && !message.includes('\n') && !ABSOLUTE_PATH.test(message);
-  // `test()` advances lastIndex on a /g regex; reset before the next use.
-  ABSOLUTE_PATH.lastIndex = 0;
+    message.length <= MAX_LENGTH && !message.includes('\n') && message.search(ABSOLUTE_PATH) === -1;
   if (alreadyClean) return message;
 
   const stderr = (error as { stderr?: unknown })?.stderr;
