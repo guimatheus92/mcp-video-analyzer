@@ -77,7 +77,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: hashgraph-online/ai-plugin-scanner-action@8db741c699f3554e9c7f4947e8954f9190332e6b # v1.2.801
+      - uses: hashgraph-online/ai-plugin-scanner-action@1f9b9bc71e70952f37c2e87142a5db6237fd8b53 # v1.2.812
         with:
           plugin_dir: '.'
           min_score: 80
