@@ -93,12 +93,25 @@ describe('detectPlatform', () => {
     expect(detectPlatform('https://fb.watch/abc123/')).toBe('ytdlp');
   });
 
+  it('detects Bilibili URLs as ytdlp', () => {
+    expect(detectPlatform('https://www.bilibili.com/video/BV1xsWQ6nEt5/')).toBe('ytdlp');
+    expect(
+      detectPlatform('https://www.bilibili.com/video/BV1xsWQ6nEt5?p=2&share_source=copy_web'),
+    ).toBe('ytdlp');
+    expect(detectPlatform('https://m.bilibili.com/video/BV1xsWQ6nEt5')).toBe('ytdlp');
+    expect(detectPlatform('https://bilibili.com/video/av170001')).toBe('ytdlp');
+    expect(detectPlatform('https://b23.tv/abcDEF')).toBe('ytdlp');
+  });
+
   it('rejects playlist/channel/profile pages (single videos only)', () => {
     expect(detectPlatform('https://www.youtube.com/playlist?list=PL123')).toBeNull();
     expect(detectPlatform('https://www.youtube.com/@somechannel')).toBeNull();
     expect(detectPlatform('https://www.instagram.com/someuser/')).toBeNull();
     expect(detectPlatform('https://www.twitch.tv/streamername')).toBeNull();
     expect(detectPlatform('https://vimeo.com/user12345')).toBeNull();
+    expect(detectPlatform('https://www.bilibili.com/')).toBeNull(); // home page
+    expect(detectPlatform('https://space.bilibili.com/123456')).toBeNull(); // user space
+    expect(detectPlatform('https://www.bilibili.com/video/')).toBeNull(); // listing without an id
   });
 
   it('rejects listing pages that lack a video id', () => {

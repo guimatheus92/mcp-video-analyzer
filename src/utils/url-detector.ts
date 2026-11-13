@@ -19,6 +19,13 @@ const YTDLP_PATTERNS: RegExp[] = [
   /^https?:\/\/(?:www\.)?dailymotion\.com\/video\/\w+/i,
   /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=\d+|[^/]+\/videos\/\d+|reel\/\d+)/i,
   /^https?:\/\/fb\.watch\/[\w-]+/i,
+  // Bilibili: `/video/BV…` (BV ids are case-sensitive base58, so `[\w]+`
+  // rather than `\d+`) and the legacy `/video/av…` numeric form. `b23.tv` is
+  // the short-link host the mobile app and the share menu emit. Playlists,
+  // user spaces and the home page stay rejected — same single-video-only rule
+  // as the platforms above.
+  /^https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/(?:BV[\w]+|av\d+)/i,
+  /^https?:\/\/b23\.tv\/[\w-]+/i,
 ];
 
 // Single source of truth for which extensions route to a video source (used by
