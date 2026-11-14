@@ -19,6 +19,9 @@ const YTDLP_PATTERNS: RegExp[] = [
   /^https?:\/\/(?:www\.)?dailymotion\.com\/video\/\w+/i,
   /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=\d+|[^/]+\/videos\/\d+|reel\/\d+)/i,
   /^https?:\/\/fb\.watch\/[\w-]+/i,
+  // Bilibili `/video/…`, same shape as yt-dlp's `_VALID_URL`. The id is not
+  // validated here (yt-dlp rejects invalid ids); `b23.tv` needs resolution.
+  /^https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/[BbAa][Vv][^/?#&]+/,
 ];
 
 // Single source of truth for which extensions route to a video source (used by
