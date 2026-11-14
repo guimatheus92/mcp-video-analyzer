@@ -19,13 +19,17 @@ const YTDLP_PATTERNS: RegExp[] = [
   /^https?:\/\/(?:www\.)?dailymotion\.com\/video\/\w+/i,
   /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=\d+|[^/]+\/videos\/\d+|reel\/\d+)/i,
   /^https?:\/\/fb\.watch\/[\w-]+/i,
-  // Bilibili: `/video/BV…` (BV ids are case-sensitive base58, so `[\w]+`
-  // rather than `\d+`) and the legacy `/video/av…` numeric form. `b23.tv` is
-  // the short-link host the mobile app and the share menu emit. Playlists,
-  // user spaces and the home page stay rejected — same single-video-only rule
-  // as the platforms above.
-  /^https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/(?:BV[\w]+|av\d+)/i,
-  /^https?:\/\/b23\.tv\/[\w-]+/i,
+  // Bilibili `/video/` pages, matching the shape yt-dlp's own `_VALID_URL`
+  // accepts: `(?P<prefix>[aAbB][vV])(?P<id>[^/?#&]+)`. The prefix is spelled out
+  // case-insensitively instead of relying on `/i`, so the id keeps its original
+  // case. The id is bounded only by URL delimiters: this allowlist decides which
+  // *class* of destination we accept, not whether a given BV id exists — that is
+  // yt-dlp's job, and it rejects invalid ids itself. Playlists, user spaces and
+  // the home page stay rejected, the same single-video-only rule as the platforms
+  // above. Short links (`b23.tv`) stay out: a token can resolve to a profile,
+  // live room or article, and resolving it needs a network hop that this
+  // synchronous check cannot make.
+  /^https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/[BbAa][Vv][^/?#&]+/,
 ];
 
 // Single source of truth for which extensions route to a video source (used by
