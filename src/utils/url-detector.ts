@@ -19,16 +19,8 @@ const YTDLP_PATTERNS: RegExp[] = [
   /^https?:\/\/(?:www\.)?dailymotion\.com\/video\/\w+/i,
   /^https?:\/\/(?:www\.|m\.)?facebook\.com\/(?:watch\/?\?v=\d+|[^/]+\/videos\/\d+|reel\/\d+)/i,
   /^https?:\/\/fb\.watch\/[\w-]+/i,
-  // Bilibili `/video/` pages, matching the shape yt-dlp's own `_VALID_URL`
-  // accepts: `(?P<prefix>[aAbB][vV])(?P<id>[^/?#&]+)`. The prefix is spelled out
-  // case-insensitively instead of relying on `/i`, so the id keeps its original
-  // case. The id is bounded only by URL delimiters: this allowlist decides which
-  // *class* of destination we accept, not whether a given BV id exists — that is
-  // yt-dlp's job, and it rejects invalid ids itself. Playlists, user spaces and
-  // the home page stay rejected, the same single-video-only rule as the platforms
-  // above. Short links (`b23.tv`) stay out: a token can resolve to a profile,
-  // live room or article, and resolving it needs a network hop that this
-  // synchronous check cannot make.
+  // Bilibili `/video/…`, same shape as yt-dlp's `_VALID_URL`. The id is not
+  // validated here (yt-dlp rejects invalid ids); `b23.tv` needs resolution.
   /^https?:\/\/(?:www\.|m\.)?bilibili\.com\/video\/[BbAa][Vv][^/?#&]+/,
 ];
 

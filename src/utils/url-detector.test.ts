@@ -111,9 +111,7 @@ describe('detectPlatform', () => {
     expect(detectPlatform('https://www.bilibili.com/')).toBeNull(); // home page
     expect(detectPlatform('https://space.bilibili.com/123456')).toBeNull(); // user space
     expect(detectPlatform('https://www.bilibili.com/video/')).toBeNull(); // listing without an id
-    // A short link can resolve to a profile, live room or article; resolving it
-    // needs a network hop this synchronous check cannot make, so it stays out.
-    expect(detectPlatform('https://b23.tv/abcDEF')).toBeNull();
+    expect(detectPlatform('https://b23.tv/abcDEF')).toBeNull(); // short link
   });
 
   it('rejects listing pages that lack a video id', () => {
