@@ -109,6 +109,7 @@ Review tooling usually sees only the changed hunks, and this repo's review misse
 - **Undescribed changes bundled into a fix** (new fields, callbacks, renamed helpers, hoisted constants): each needs a reason in the description, or its own PR.
 - **`warnings[]` text from `extractKeyFrames`**, including indirect changes (`String(e)` instead of `e.message` prepends `Error: `; re-labelling): user-visible, see Conventions.
 - **Claims about tooling** ("knip failed", "CI blocked"): check them against the repo's config — `knip.json` sets `types` to `warn`, so an unused exported type never fails `npm run check`.
+- **`SKILL.md` frontmatter quoting** (`skills/video/SKILL.md`, `.claude/skills/*/SKILL.md`): an unquoted `description` is correct here — valid YAML, and the Agent Skills spec sets no quoting rule. "Wrap `description` in single quotes" is the awesome-copilot repo's own contribution checklist, which its review pack applies to every `**/skills/**/SKILL.md`; it is not a requirement of this repo, so don't flag it (false positive on #105). Flag only a value that would actually break YAML parsing, such as an unquoted `: ` or ` #`.
 
 ## Environment Variables
 
