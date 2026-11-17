@@ -17,7 +17,7 @@
   <a href="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer"><img width="360" height="190" src="https://glama.ai/mcp/servers/guimatheus92/mcp-video-analyzer/badge" alt="mcp-video-analyzer MCP server" /></a>
 </p>
 
-No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does — across Loom, the major yt-dlp platforms (YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook), direct video URLs, and local files.
+No existing video MCP combines **transcripts + visual frames + metadata** in one tool. This one does — across Loom, the major yt-dlp platforms (YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook/Bilibili), direct video URLs, and local files.
 
 > **Want a full pipeline, not just a tool?** [social-knowledge-base](https://github.com/guimatheus92/social-knowledge-base) is built on top of this server — it downloads whole Instagram creator accounts (reels, stories, highlights), transcribes them, and turns the result into a searchable, RAG-queryable knowledge base with AI-generated notes. Use this MCP when you want per-video analysis inside an agent; use social-knowledge-base when you want to archive and query an entire account.
 
@@ -26,7 +26,7 @@ No existing video MCP combines **transcripts + visual frames + metadata** in one
 ### Prerequisites
 
 - **Node.js 22.12+** — required to run the server via `npx`
-- **yt-dlp** — **required** for YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs; optional for everything else (improves Loom download quality). Install with `pip install yt-dlp`
+- **yt-dlp** — **required** for YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook/Bilibili URLs; optional for everything else (improves Loom download quality). Install with `pip install yt-dlp`
 - **Chrome/Chromium** (optional) — fallback for frame extraction if yt-dlp is unavailable
 
 > Without yt-dlp or Chrome, direct URLs and local files still get frames — the bundled `ffmpeg-static` does the extraction, and Loom falls back to its own CDN download. Platform URLs (YouTube etc.) degrade to a clear "install yt-dlp" warning. Transcripts, metadata, and comments never require either.
@@ -304,12 +304,14 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 | Source | Transcript | Metadata | Comments | Frames | Auth |
 |--------|:----------:|:--------:|:--------:|:------:|:----:|
 | **Loom** | Yes | Yes | Yes | Yes (usually needs yt-dlp — see note) | None |
-| **YouTube / Vimeo / TikTok / Instagram / X / Twitch / Dailymotion / Facebook** | Native captions (uploaded > auto-generated) or Whisper fallback | Yes (title, duration, uploader, views, chapters, upload date) | No | Yes (capped at 1080p) | yt-dlp installed; cookies for Instagram / age-restricted (see below) |
+| **YouTube / Vimeo / TikTok / Instagram / X / Twitch / Dailymotion / Facebook / Bilibili** | Native captions (uploaded > auto-generated) or Whisper fallback | Yes (title, duration, uploader, views, chapters, upload date) | No | Yes (capped at 1080p) | yt-dlp installed; cookies for Instagram / age-restricted (see below) |
 | **Direct URL** (.mp4, .mov, .mkv, .webm, …) | No | Duration only | No | Yes | None |
 | **Direct URL + TwelveLabs** | Yes (Pegasus, best-effort) | Duration floor + title | No | Yes | `TWELVELABS_API_KEY` |
 | **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
 
 > **Loom frames**: transcript, metadata, and comments come straight from Loom's API with no extra tooling. Frame extraction is different — Loom serves most videos as separate DASH video+audio streams, which only [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp`) fetches and merges. Merging uses the bundled `ffmpeg-static`, so no system ffmpeg is required. Without yt-dlp a direct-CDN fallback still covers some videos; when it can't, you get transcript + metadata + comments plus a warning explaining why frames are missing.
+>
+> **Bilibili frames**: metadata, chapters and captions work, but frame extraction currently fails on videos longer than a couple of minutes, because the CDN cuts the video stream mid-transfer ([#106](https://github.com/guimatheus92/mcp-video-analyzer/issues/106)).
 >
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to. UNC / network share paths (`\\host\share\clip.mp4`) are the exception: they reach the network rather than local disk, so they follow the [network destination](#network-destinations) rules and need `MCP_ALLOW_PRIVATE_URLS=1`.
 >
