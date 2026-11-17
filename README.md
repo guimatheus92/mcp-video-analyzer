@@ -311,6 +311,8 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 
 > **Loom frames**: transcript, metadata, and comments come straight from Loom's API with no extra tooling. Frame extraction is different — Loom serves most videos as separate DASH video+audio streams, which only [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp`) fetches and merges. Merging uses the bundled `ffmpeg-static`, so no system ffmpeg is required. Without yt-dlp a direct-CDN fallback still covers some videos; when it can't, you get transcript + metadata + comments plus a warning explaining why frames are missing.
 >
+> **Bilibili frames**: metadata, chapters and captions work, but frame extraction currently fails on videos longer than a couple of minutes, because the CDN cuts the video stream mid-transfer ([#106](https://github.com/guimatheus92/mcp-video-analyzer/issues/106)).
+>
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to. UNC / network share paths (`\\host\share\clip.mp4`) are the exception: they reach the network rather than local disk, so they follow the [network destination](#network-destinations) rules and need `MCP_ALLOW_PRIVATE_URLS=1`.
 >
 > **Sidecar transcripts**: if a `clip.vtt`, `clip.srt`, `clip.en.vtt`, etc. lives next to `clip.mp4`, it's used as the transcript automatically — no Whisper roundtrip needed. SRT is converted to VTT in-memory.
