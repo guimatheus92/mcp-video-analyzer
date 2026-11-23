@@ -58,6 +58,8 @@ export const DENSE_UI_STATES = [
 export const BIG_TEXT_LINES = ['BIG CONTROL ONE', 'BIG CONTROL TWO'];
 /** Hard-cut timestamps (seconds) of the scene-cut clip. */
 export const SCENE_CUT_TIMES = [2, 4];
+/** Length of the cuts-then-static clip: 3s of rapid cuts, then a 9s static tail. */
+export const CUTS_THEN_STATIC_SECONDS = 12;
 
 /**
  * Ground truth for the committed speech fixture `test/fixtures/speech.wav`
@@ -211,6 +213,28 @@ export function sceneCutClip(): Promise<string> {
     ...['red', 'blue', 'green'].flatMap((c) => ['-f', 'lavfi', '-i', seg(c)]),
     '-filter_complex',
     '[0:v][1:v][2:v]concat=n=3:v=1:a=0[v]',
+    '-map',
+    '[v]',
+    '-pix_fmt',
+    'yuv420p',
+  ]);
+}
+
+/**
+ * Six 0.5s red/blue segments (hard cuts every 0.5s) followed by a 9s static
+ * green tail: every scene cut sits in the first quarter of the clip. Scene
+ * detection alone either truncates to the earliest cuts (small budget) or
+ * leaves the tail unsampled (large budget) — the timeline-coverage fixture.
+ */
+export function cutsThenStaticClip(): Promise<string> {
+  const seg = (color: string, d: number) => `color=c=${color}:s=320x240:d=${d}:r=10`;
+  const colors = ['red', 'blue', 'red', 'blue', 'red', 'blue'];
+  const inputs = [...colors.map((c) => seg(c, 0.5)), seg('green', 9)];
+  return cachedClip('cuts-then-static', [
+    '-y',
+    ...inputs.flatMap((i) => ['-f', 'lavfi', '-i', i]),
+    '-filter_complex',
+    `${inputs.map((_, i) => `[${i}:v]`).join('')}concat=n=${inputs.length}:v=1:a=0[v]`,
     '-map',
     '[v]',
     '-pix_fmt',

@@ -26,7 +26,9 @@ import { warningReason } from './warnings.js';
 // frameless run hold frames: [] under the SAME key shape a framed read now
 // produces (skipFrames was unkeyed), so they must be recomputed once rather
 // than silently answering framed reads with zero frames.
-const SIDECAR_VERSION = 2;
+// v3: key frames cover the whole timeline. A v2 sidecar of a long low-cut
+// video holds the old scene-only selection under an unchanged key.
+const SIDECAR_VERSION = 3;
 
 /**
  * The result-defining inputs that key both the in-memory cache and the on-disk

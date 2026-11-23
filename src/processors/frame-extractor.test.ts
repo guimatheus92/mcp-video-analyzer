@@ -2,7 +2,14 @@ import { existsSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { FIXTURES_DIR, SCENE_CUT_TIMES, sceneCutClip } from '../../test/helpers/index.js';
+import {
+  CUTS_THEN_STATIC_SECONDS,
+  FIXTURES_DIR,
+  SCENE_CUT_TIMES,
+  cutsThenStaticClip,
+  runFfmpeg,
+  sceneCutClip,
+} from '../../test/helpers/index.js';
 import { cleanupTempDir, createTempDir } from '../utils/temp-files.js';
 import {
   extractDenseFrames,
@@ -300,12 +307,43 @@ describe('extractKeyFrames', () => {
     }
   });
 
-  it('yields frames for a clip even with no scene cuts (falls back to uniform sampling)', async () => {
+  it('samples a clip with no scene cuts uniformly across its whole length', async () => {
     const tempDir = await createTempDir();
     try {
-      // ffmpeg scene scores are in [0,1], so gt(scene,1) is never true →
-      // scene detection finds nothing and the uniform-sampling fallback kicks in.
-      const { frames, warnings } = await extractKeyFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+      // ffmpeg scene scores are in [0,1], so gt(scene,1) is never true: every
+      // frame here comes from coverage sampling (3s clip, 10 → one per 0.3s).
+      const { frames } = await extractKeyFrames(join(FIXTURES_DIR, 'tiny.mp4'), tempDir, {
+        threshold: 1.0,
+        maxFrames: 10,
+      });
+
+      expect(frames.length).toBeGreaterThan(5);
+      expect(frames.length).toBeLessThanOrEqual(10);
+      expect(parseTimestamp(frames[frames.length - 1].time)).toBeGreaterThanOrEqual(2);
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
+  it('falls back to uniform sampling on zero cuts when the duration is unreadable', async () => {
+    const tempDir = await createTempDir();
+    try {
+      // A raw H.264 stream has no container duration ("Duration: N/A"), so
+      // coverage sampling is off and the zero-cut fallback is what runs.
+      const raw = join(tempDir, 'raw.h264');
+      await runFfmpeg([
+        '-y',
+        '-i',
+        join(FIXTURES_DIR, 'tiny.mp4'),
+        '-c:v',
+        'libx264',
+        '-f',
+        'h264',
+        raw,
+      ]);
+      expect((await probeVideo(raw)).duration).toBe(0);
+
+      const { frames, warnings } = await extractKeyFrames(raw, tempDir, {
         threshold: 1.0,
         maxFrames: 10,
       });
@@ -315,7 +353,7 @@ describe('extractKeyFrames', () => {
     } finally {
       await cleanupTempDir(tempDir);
     }
-  });
+  }, 20_000);
 
   it('degrades to an empty result with a warning (never throws) for a bad file', async () => {
     const tempDir = await createTempDir();
@@ -336,29 +374,57 @@ describe('extractKeyFrames on a clip with known scene cuts (golden fixture)', ()
   // Every other frame-count assertion in this suite only bounds against
   // duration; this one pins scene detection to ground truth: three solid-color
   // segments with hard cuts at exactly SCENE_CUT_TIMES.
-  it('finds each cut via scene detection, not the uniform-sampling fallback', async () => {
+  it('finds each cut via scene detection, not coverage sampling', async () => {
     const tempDir = await createTempDir();
     try {
       const clip = await sceneCutClip();
-      const { frames, warnings } = await extractKeyFrames(clip, tempDir, { maxFrames: 10 });
+      // 6s clip, 2 frames → coverage spacing 3s: a gap filler can only land at
+      // 0s or ≥7s, so frames at exactly the cut times can only be the cuts.
+      // That makes this a positive proof that scene detection ran (with any
+      // larger budget, fillers sit close enough to the cuts to pass by accident).
+      const { frames } = await extractKeyFrames(clip, tempDir, { maxFrames: 2 });
 
-      // Positive assertion that the scene path actually ran — if detection
-      // found nothing and fell back to uniform sampling, cut coverage below
-      // would pass by accident.
-      expect(warnings.some((w) => w.includes('uniform temporal sampling'))).toBe(false);
-
-      expect(frames.length).toBeGreaterThanOrEqual(SCENE_CUT_TIMES.length);
-      const times = frames.map((f) => parseTimestamp(f.time));
-      for (const cut of SCENE_CUT_TIMES) {
-        // frame.time has M:SS granularity, so allow 1s of rounding.
-        expect(times.some((t) => Math.abs(t - cut) <= 1)).toBe(true);
-      }
+      expect(frames.map((f) => parseTimestamp(f.time))).toEqual(SCENE_CUT_TIMES);
     } finally {
       await cleanupTempDir(tempDir);
     }
     // Golden-clip generation + real scene detection: two ffmpeg spawns, so the
     // 5s default flakes on a loaded machine.
   }, 20_000);
+});
+
+/**
+ * Key frames must cover the whole video, not just where the cuts are. A 16-min
+ * Bilibili tutorial came back with 2 frames: scene detection found 2 cuts, and
+ * the uniform fallback only ran on ZERO cuts. The opposite case had the same
+ * root: more cuts than budget kept the first N, so the end went unsampled.
+ */
+describe('extractKeyFrames covers the whole timeline, whatever the cut density', () => {
+  it.each([
+    // 1s budget spacing: the 6 cuts fit, the 9s static tail used to get nothing.
+    { maxFrames: 12, scenario: 'few cuts and a long static tail' },
+    // 3s budget spacing: more cuts than budget, the cap used to keep the first 4.
+    { maxFrames: 4, scenario: 'more cuts than the frame budget' },
+  ])(
+    '$scenario (maxFrames $maxFrames)',
+    async ({ maxFrames }) => {
+      const tempDir = await createTempDir();
+      try {
+        const clip = await cutsThenStaticClip();
+        const { frames } = await extractKeyFrames(clip, tempDir, { maxFrames });
+
+        expect(frames.length).toBeGreaterThan(0);
+        expect(frames.length).toBeLessThanOrEqual(maxFrames);
+        const edges = [0, ...frames.map((f) => parseTimestamp(f.time)), CUTS_THEN_STATIC_SECONDS];
+        const largestGap = Math.max(...edges.slice(1).map((t, i) => t - edges[i]));
+        // Twice the budget spacing, +1 because frame.time is floored to seconds.
+        expect(largestGap).toBeLessThanOrEqual((2 * CUTS_THEN_STATIC_SECONDS) / maxFrames + 1);
+      } finally {
+        await cleanupTempDir(tempDir);
+      }
+    },
+    20_000,
+  );
 });
 
 /**

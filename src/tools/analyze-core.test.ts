@@ -200,7 +200,7 @@ describe('getAnalysis OCR-before-dedup pipeline (real ffmpeg)', () => {
 
   beforeAll(async () => {
     // A short STATIC, non-black clip: scene detection finds no cuts → the
-    // uniform-sampling fallback runs, frames survive the black-frame filter, and
+    // coverage sampling supplies frames, frames survive the black-frame filter, and
     // the OCR-before-dedup branch executes end to end. (tiny.mp4 is pure black,
     // so its frames are stripped before that branch — unusable here.)
     const dir = await mkdtemp(join(tmpdir(), 'analyze-core-it-'));

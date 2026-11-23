@@ -280,7 +280,7 @@ async function runAnalysisPipeline(
       let frameOriginals: FrameOriginals = new Map();
 
       // Strategy 1: download (no-op for local files) + ffmpeg frame extraction
-      // with scene→uniform-sampling fallback for static clips.
+      // with gap-filling so static stretches are covered too.
       if (adapter.capabilities.videoDownload) {
         videoPath = await adapter.downloadVideo(url, tempDir, (w) => warnings.push(w));
 

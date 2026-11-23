@@ -309,6 +309,27 @@ describe('sidecar write/read', () => {
     }
   });
 
+  it('retires version 2 sidecars, whose frames predate timeline coverage', async () => {
+    // Same key, different frames: a v2 sidecar of a long low-cut video holds
+    // the sparse scene-only selection (2 frames for 16 minutes) and would keep
+    // serving it forever, since nothing in the params key changed.
+    const tempDir = await createTempDir();
+    try {
+      const clip = join(tempDir, 'clip.mp4');
+      await copyFile(join(FIXTURES_DIR, 'tiny.mp4'), clip);
+      const frame = await createTestImage(tempDir, 'frame.jpg');
+      await writeAnalysisSidecars(clip, fakeResult(frame), PARAMS, { transcriptFromWhisper: true });
+      const jsonPath = join(tempDir, 'clip.analysis.json');
+      const persisted = JSON.parse(await readFile(jsonPath, 'utf8'));
+      persisted.version = 2;
+      await writeFile(jsonPath, JSON.stringify(persisted));
+
+      expect(await readAnalysisSidecar(clip, PARAMS)).toBeNull();
+    } finally {
+      await cleanupTempDir(tempDir);
+    }
+  });
+
   it('invalidates when the source video changes (stamp mismatch)', async () => {
     const tempDir = await createTempDir();
     try {
