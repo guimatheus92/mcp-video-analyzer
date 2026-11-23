@@ -309,7 +309,7 @@ This makes `analyze_videos` over thousands of files resumable, and lets an exter
 | **Direct URL + TwelveLabs** | Yes (Pegasus, best-effort) | Duration floor + title | No | Yes | `TWELVELABS_API_KEY` |
 | **Local file** (absolute path or `file://` URI) | Sidecar `.vtt`/`.srt` or Whisper fallback | Probed via ffmpeg (duration, dims, codec, audio presence) | No | Yes | None |
 
-> **Loom frames**: transcript, metadata, and comments come straight from Loom's API with no extra tooling. Frame extraction is different — Loom serves most videos as separate DASH video+audio streams, which only [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp`) fetches and merges. Merging uses the bundled `ffmpeg-static`, so no system ffmpeg is required. Without yt-dlp a direct-CDN fallback still covers some videos; when it can't, you get transcript + metadata + comments plus a warning explaining why frames are missing.
+> **Loom frames**: transcript, metadata, and comments come straight from Loom's API with no extra tooling. Frame extraction is different — Loom serves most videos as separate video+audio streams, which only [yt-dlp](https://github.com/yt-dlp/yt-dlp) (`pip install yt-dlp`) fetches and merges. Merging uses the bundled `ffmpeg-static`, so no system ffmpeg is required. Without yt-dlp a direct-CDN fallback still covers some videos; when it can't, you get transcript + metadata + comments plus a warning explaining why frames are missing.
 >
 > **Local files**: pass an absolute path (e.g., `/Users/you/clip.mp4`) or a `file://` URI as the `url` argument to any tool. Relative paths are rejected — the server's working directory is unpredictable from the MCP client. Note that any caller of the MCP server can ask it to read any file the server process has access to. UNC / network share paths (`\\host\share\clip.mp4`) are the exception: they reach the network rather than local disk, so they follow the [network destination](#network-destinations) rules and need `MCP_ALLOW_PRIVATE_URLS=1`.
 >
@@ -342,7 +342,7 @@ Single-video pages on major platforms route through [yt-dlp](https://github.com/
 
 - **Transcript**: native captions are preferred and free — uploaded subtitles first, auto-generated captions as fallback (rolling-window duplication is collapsed). `WHISPER_LANGUAGE` (e.g. `pt`) is also used to pick the caption language. Videos with no captions at all fall through to the normal Whisper chain.
 - **Metadata**: title, duration, uploader/channel, view count, upload date, and chapters — no download needed.
-- **Download**: capped at 1080p (frames/OCR don't need more), live streams are skipped, and DASH audio+video is merged with the bundled `ffmpeg-static` (no system ffmpeg required).
+- **Download**: capped at 1080p (frames/OCR don't need more), live streams are skipped, and separate audio+video streams are merged with the bundled `ffmpeg-static` (no system ffmpeg required).
 - **Cookies** — Instagram and age-restricted videos usually require a logged-in session:
 
 | Env var | What it does | Example |

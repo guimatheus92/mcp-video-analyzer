@@ -1,13 +1,10 @@
 import { execFile as execFileCb } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
+import { ffmpegPath } from '../utils/ffmpeg.js';
 import { parseVtt } from '../utils/vtt-parser.js';
 
 const execFile = promisify(execFileCb);
-
-const require = createRequire(import.meta.url);
-const ffmpegPath: string = require('ffmpeg-static') as string;
 
 /**
  * Extract the first embedded subtitle stream from a container as a transcript.

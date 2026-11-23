@@ -1,14 +1,11 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { mkdtemp, readdir } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { IFrameResult } from '../types.js';
+import { ffmpegPath } from '../utils/ffmpeg.js';
 
 const execFile = promisify(execFileCb);
-
-const require = createRequire(import.meta.url);
-const ffmpegPath: string = require('ffmpeg-static') as string;
 
 /** Normalize path to forward slashes for ffmpeg image2 muxer (Windows compat) */
 function ffmpegPath_(p: string): string {
@@ -55,11 +52,9 @@ export function formatTimestamp(seconds: number, fractionalDigits = 0): string {
  *
  * The distinction is invisible everywhere else in this pipeline, because both
  * outcomes arrive as a rejected promise and degrade to an empty result. That
- * matters concretely: the bundled `ffmpeg-static` 7.0.2 LINUX build segfaults
- * in the MPEG-TS demuxer, so every `.mts`/`.m2ts` input — the standard AVCHD
- * camcorder format — returns zero frames in the published Docker image. The
- * identical bytes parse fine on the Windows build, so this is the binary, not
- * the file. Without this message the user sees an empty result and no reason.
+ * mattered concretely: the bundled `ffmpeg-static` 7.0.2 LINUX build segfaulted
+ * on every `.mts`/`.m2ts` input (fixed in `utils/ffmpeg.ts`), and until then the
+ * user got zero frames and, without this message, no reason.
  *
  * Returns `null` for an ordinary non-zero exit, which callers already handle.
  * The reason deliberately omits the command line (CLAUDE.md: a surfaced ffmpeg

@@ -1,14 +1,11 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { ffmpegPath } from './ffmpeg.js';
 import { warningReason } from './warnings.js';
 
 const execFile = promisify(execFileCb);
-
-const require = createRequire(import.meta.url);
-const ffmpegPath: string = require('ffmpeg-static') as string;
 
 export const YTDLP_MISSING =
   'yt-dlp is not installed — install it ("pip install yt-dlp" or https://github.com/yt-dlp/yt-dlp#installation) to analyze YouTube/Vimeo/TikTok/Instagram/X/Twitch/Dailymotion/Facebook URLs.';
