@@ -165,7 +165,7 @@ Extracts everything from a video URL in one call:
 
 Returns:
 - **Transcript** with timestamps and speakers
-- **Key frames** extracted via scene-change detection (automatically deduplicated). For static clips with no scene cuts — e.g. talking-head Reels/Stories where only an on-screen text overlay changes — it automatically falls back to uniform temporal sampling so you still get frames (and OCR) instead of an empty result.
+- **Key frames** extracted via scene-change detection (automatically deduplicated), plus a frame wherever the video goes longer than its frame budget allows without a cut — so a long tutorial with two cuts still gets frames across its whole length, and static clips (e.g. talking-head Reels/Stories where only an on-screen text overlay changes) are sampled uniformly instead of coming back empty.
 - **OCR text** extracted from frames (code, error messages, UI text, prices/dates/CTAs visible on screen)
 - **Annotated timeline** merging transcript + frames + OCR into a unified "what happened when" view
 - **Metadata** (title, duration, platform)
@@ -234,7 +234,7 @@ Returns metadata, comments, chapters, and AI summary without downloading the vid
 ```
 
 Two modes:
-- **Scene-change detection** (default) — captures visual transitions
+- **Scene-change detection** (default) — captures visual transitions, plus gap-filling frames so the whole video is covered
 - **Dense sampling** (`dense: true`) — 1 frame/sec for full coverage
 
 </details>

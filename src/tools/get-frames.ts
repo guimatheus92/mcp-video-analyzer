@@ -57,7 +57,7 @@ export function registerGetFrames(server: FastMCP): void {
     description: `Extract key frames from a video URL without transcript or metadata.
 
 Two extraction modes:
-- Scene-change detection (default): captures visual transitions
+- Scene-change detection (default): captures visual transitions, plus gap-filling frames so the whole video is covered
 - Dense sampling (dense=true): captures 1 frame/sec for full video coverage
 
 Returns optimized, deduplicated JPEG frames.

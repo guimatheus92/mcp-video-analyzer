@@ -29,7 +29,7 @@ export function registerAnalyzeVideo(server: FastMCP): void {
 
 Returns structured data about the video content:
 - Transcript with timestamps and speakers
-- Key frames extracted via scene-change detection (deduplicated, as images). For static clips with no scene cuts (e.g. talking-head Reels/Stories where only on-screen text changes) it automatically falls back to uniform temporal sampling.
+- Key frames extracted via scene-change detection plus gap-filling frames, so the whole video is covered (deduplicated, as images). Static clips (e.g. talking-head Reels/Stories where only on-screen text changes) are sampled uniformly.
 - OCR text extracted from frames (code, error messages, UI text, prices/dates/CTAs visible on screen)
 - Annotated timeline merging transcript + frames + OCR into a unified chronological view
 - Metadata (title, duration, platform)

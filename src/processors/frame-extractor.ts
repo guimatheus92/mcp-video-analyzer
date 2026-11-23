@@ -204,15 +204,55 @@ export function parseSceneTimestamps(stderr: string): number[] {
   return timestamps;
 }
 
+/**
+ * At most `maxFrames` of the selected frames. With a `spacing`, the last frame
+ * of each `spacing`-wide time bucket, so the cap thins the whole timeline
+ * instead of keeping the first N. A gap filler only fires `spacing` after the
+ * previous pick, so it can never follow a cut inside one bucket: "last" keeps
+ * the cut whenever a bucket has one.
+ */
+function pickSceneFrames(
+  files: string[],
+  timestamps: number[],
+  maxFrames: number,
+  spacing: number,
+): { file: string; t: number }[] {
+  const all = files.map((file, i) => ({ file, t: timestamps[i] ?? 0 }));
+  if (spacing <= 0 || all.length <= maxFrames) return all.slice(0, maxFrames);
+  const t0 = all[0].t;
+  const byBucket = new Map<number, { file: string; t: number }>();
+  for (const f of all) byBucket.set(Math.min(maxFrames - 1, Math.floor((f.t - t0) / spacing)), f);
+  return [...byBucket.values()];
+}
+
+/**
+ * Scene-change frames. With a known `duration`, also a frame whenever
+ * `duration / maxFrames` seconds pass without one, so no stretch of the video
+ * goes unsampled however few cuts it has (and a static clip is sampled
+ * uniformly without a second pass).
+ */
 export async function extractSceneFrames(
   videoPath: string,
   outputDir: string,
-  options: { threshold?: number; maxFrames?: number } = {},
+  options: { threshold?: number; maxFrames?: number; duration?: number } = {},
 ): Promise<IFrameResult[]> {
   const threshold = options.threshold ?? 0.1;
   const maxFrames = options.maxFrames ?? 20;
+  // Rounded once so ffmpeg's gap and pickSceneFrames' buckets are the same width.
+  const spacing =
+    options.duration && maxFrames > 0 ? Number((options.duration / maxFrames).toFixed(3)) : 0;
+  const select =
+    spacing > 0
+      ? `gt(scene,${threshold})+isnan(prev_selected_t)+gte(t-prev_selected_t,${spacing})`
+      : `gt(scene,${threshold})`;
 
   const outputPattern = ffmpegPath_(join(outputDir, 'scene_%03d.jpg'));
+  const toResults = (stderr: string, files: string[]): IFrameResult[] =>
+    pickSceneFrames(files, parseSceneTimestamps(stderr), maxFrames, spacing).map(({ file, t }) => ({
+      time: formatTimestamp(t),
+      filePath: join(outputDir, file),
+      mimeType: 'image/jpeg',
+    }));
 
   try {
     const { stderr } = await execFile(
@@ -221,7 +261,7 @@ export async function extractSceneFrames(
         '-i',
         videoPath,
         '-vf',
-        `select='gt(scene,${threshold})',showinfo`,
+        `select='${select}',showinfo`,
         '-fps_mode',
         'vfr',
         '-q:v',
@@ -232,30 +272,14 @@ export async function extractSceneFrames(
       { timeout: 120000 },
     );
 
-    const timestamps = parseSceneTimestamps(stderr);
-    const files = await listFrameFiles(outputDir, 'scene_');
-
-    const results: IFrameResult[] = files.slice(0, maxFrames).map((file, i) => ({
-      time: formatTimestamp(timestamps[i] ?? 0),
-      filePath: join(outputDir, file),
-      mimeType: 'image/jpeg',
-    }));
-
-    return results;
+    return toResults(stderr, await listFrameFiles(outputDir, 'scene_'));
   } catch (error: unknown) {
     // Try to parse results from partial output
     if (error && typeof error === 'object' && 'stderr' in error) {
       const stderr = (error as { stderr: string }).stderr;
-      const timestamps = parseSceneTimestamps(stderr);
       const files = await listFrameFiles(outputDir, 'scene_').catch(() => [] as string[]);
 
-      if (files.length > 0) {
-        return files.slice(0, maxFrames).map((file, i) => ({
-          time: formatTimestamp(timestamps[i] ?? 0),
-          filePath: join(outputDir, file),
-          mimeType: 'image/jpeg',
-        }));
-      }
+      if (files.length > 0) return toResults(stderr, files);
     }
 
     const msg = ffmpegCrashReason(error, videoPath) ?? errorMessage(error);
@@ -415,11 +439,11 @@ export interface KeyFrameExtraction {
  * Extract key frames with a robust fallback chain for local files and downloads.
  *
  * - `dense: true` → uniform temporal sampling (1 fps, capped at maxFrames).
- * - otherwise → scene-change detection; **if it yields zero frames** (common for
- *   static "talking-head" clips, Reels/Stories where only an on-screen text
- *   overlay changes), fall back to uniform sampling. Uniform sampling is also
- *   strictly better for OCR of static overlays, so the fallback improves results
- *   rather than merely avoiding an empty response.
+ * - otherwise → scene-change detection plus a frame whenever `duration /
+ *   maxFrames` seconds pass without one, so the whole timeline is covered: a
+ *   long tutorial with 2 cuts no longer returns 2 frames, and a static
+ *   "talking-head" clip or text-overlay Reel is sampled uniformly. When the
+ *   duration can't be read, zero cuts falls back to uniform sampling instead.
  *
  * Never throws: extraction errors degrade to `[]` with a warning, matching the
  * project's graceful-degradation convention.
@@ -452,14 +476,21 @@ export async function extractKeyFrames(
     return { frames, warnings };
   }
 
-  let sceneErrored = false;
-  let frames = await extractSceneFrames(videoPath, outputDir, { threshold, maxFrames }).catch(
-    (e: unknown) => {
-      warnings.push(labelled('Scene frame extraction failed', e));
-      sceneErrored = true;
-      return [] as IFrameResult[];
-    },
+  // Header-only probe (no decode); 0 when unreadable disables coverage sampling.
+  const duration = await probeVideo(videoPath).then(
+    (p) => p.duration,
+    () => 0,
   );
+  let sceneErrored = false;
+  let frames = await extractSceneFrames(videoPath, outputDir, {
+    threshold,
+    maxFrames,
+    duration,
+  }).catch((e: unknown) => {
+    warnings.push(labelled('Scene frame extraction failed', e));
+    sceneErrored = true;
+    return [] as IFrameResult[];
+  });
 
   if (frames.length === 0) {
     frames = await extractDenseFrames(videoPath, outputDir, { maxFrames }).catch(
@@ -482,5 +513,9 @@ export async function extractKeyFrames(
 
 async function listFrameFiles(dir: string, prefix: string): Promise<string[]> {
   const files = await readdir(dir);
-  return files.filter((f) => f.startsWith(prefix) && f.endsWith('.jpg')).sort();
+  // Numeric: ffmpeg's %03d grows past 999, and `scene_1000` must not sort
+  // before `scene_101` (frames pair with showinfo timestamps by index).
+  return files
+    .filter((f) => f.startsWith(prefix) && f.endsWith('.jpg'))
+    .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }));
 }

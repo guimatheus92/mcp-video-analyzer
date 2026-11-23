@@ -2,6 +2,7 @@ export { createTestImage } from './images.js';
 export { FIXTURES_DIR, REPO_ROOT } from './fixtures.js';
 export {
   BIG_TEXT_LINES,
+  CUTS_THEN_STATIC_SECONDS,
   DENSE_UI_HEADER,
   DENSE_UI_STATES,
   FORMAT_CLIP_SECONDS,
@@ -10,6 +11,7 @@ export {
   SPEECH_WAV,
   SPEECH_WORDS,
   bigTextClip,
+  cutsThenStaticClip,
   denseUiClip,
   formatClip,
   portraitClip,
@@ -23,5 +25,6 @@ export {
   imageCount,
   imageWidths,
   noProgress,
+  runFfmpeg,
   warningsOf,
 } from './tools.js';
