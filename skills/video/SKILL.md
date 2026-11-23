@@ -1,6 +1,6 @@
 ---
 name: video
-description: Analyze a video (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook, direct URL, or local file) — transcript, key frames, OCR text, metadata, annotated timeline — and answer questions about it with timestamps.
+description: Analyze a video (Loom, YouTube, Vimeo, TikTok, Instagram, X/Twitter, Twitch, Dailymotion, Facebook, Bilibili, direct URL, or local file) — transcript, key frames, OCR text, metadata, annotated timeline — and answer questions about it with timestamps.
 argument-hint: "<video-url-or-path> [question]"
 allowed-tools: Bash, Read, mcp__video-analyzer
 license: MIT
