@@ -1,17 +1,14 @@
 import { execFile as execFileCb } from 'node:child_process';
 import { readFile, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { basename, delimiter, dirname, extname, join } from 'node:path';
 import { promisify } from 'node:util';
 import type { ITranscriptEntry } from '../types.js';
 import { envFlag } from '../utils/env.js';
+import { ffmpegPath } from '../utils/ffmpeg.js';
 import { warningReason } from '../utils/warnings.js';
 import { ffmpegCrashReason, formatTimestamp } from './frame-extractor.js';
 
 const execFile = promisify(execFileCb);
-
-const require = createRequire(import.meta.url);
-const ffmpegPath: string = require('ffmpeg-static') as string;
 
 /**
  * One short, path-free sentence for a failed audio extraction.
